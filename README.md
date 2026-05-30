@@ -89,6 +89,8 @@ NEXT_PUBLIC_DEV_BYPASS_AUTH=true
 
 ### 4. Boot the full stack
 
+> **Environment safety:** Never commit `.env` or `.env.local` files — only commit the `.env.example` templates. When sharing logs or asking for help in issues and PRs, redact all secrets, tokens, and private keys before pasting.
+
 ```bash
 npm run dev
 ```
