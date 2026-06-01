@@ -1,4 +1,4 @@
-import { faker } from '@faker-js/faker/.';
+import { faker } from '@faker-js/faker';
 import { Tip, TipVerificationStatus } from '../../../src/tipping/entities/tip.entity';
 import { AnonymousConfession } from '../../../src/confession/entities/confession.entity';
 import { Gender } from '../../../src/confession/dto/get-confessions.dto';

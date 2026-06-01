@@ -44,10 +44,16 @@ export class NotificationGateway
       'app.frontendUrl',
       'http://localhost:3000',
     );
-    server.engine.opts.cors = {
-      origin: frontendUrl,
-      credentials: true,
-    };
+    if (server.engine?.opts) {
+      server.engine.opts.cors = {
+        origin: frontendUrl,
+        credentials: true,
+      };
+    } else {
+      this.logger.warn(
+        'Socket.IO engine options are unavailable; using gateway CORS defaults',
+      );
+    }
     this.logger.log('Notification Gateway initialized');
   }
 

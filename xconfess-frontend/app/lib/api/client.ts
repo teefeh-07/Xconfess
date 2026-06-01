@@ -120,7 +120,7 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
-export { AxiosError };
+export { apiClient, AxiosError };
 
 export type DataExportStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED";
 

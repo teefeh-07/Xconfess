@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 export interface PaginationState {
   page: number;
@@ -11,10 +11,32 @@ export interface PaginationState {
 export function usePaginationState(defaultLimit = 10) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const [queryString, setQueryString] = useState("");
+  const searchParams = useMemo(
+    () => new URLSearchParams(queryString),
+    [queryString],
+  );
+
+  useEffect(() => {
+    setQueryString(window.location.search);
+  }, [pathname]);
 
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
-  const limit = Math.max(1, parseInt(searchParams.get("limit") ?? String(defaultLimit)) || defaultLimit);
+  const limit = Math.max(
+    1,
+    parseInt(searchParams.get("limit") ?? String(defaultLimit)) || defaultLimit,
+  );
+
+  const pushParams = useCallback(
+    (params: URLSearchParams) => {
+      const nextQueryString = params.toString();
+      setQueryString(nextQueryString ? `?${nextQueryString}` : "");
+      router.push(`${pathname}${nextQueryString ? `?${nextQueryString}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname],
+  );
 
   const setPage = useCallback(
     (newPage: number) => {
@@ -24,19 +46,19 @@ export function usePaginationState(defaultLimit = 10) {
       } else {
         params.set("page", String(newPage));
       }
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      pushParams(params);
     },
-    [router, pathname, searchParams]
+    [searchParams, pushParams],
   );
 
   const setLimit = useCallback(
     (newLimit: number) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set("limit", String(newLimit));
-      params.delete("page"); // Reset to page 1 when limit changes
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      params.delete("page");
+      pushParams(params);
     },
-    [router, pathname, searchParams]
+    [searchParams, pushParams],
   );
 
   return {

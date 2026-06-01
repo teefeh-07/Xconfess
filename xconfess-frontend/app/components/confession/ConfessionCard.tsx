@@ -7,6 +7,8 @@ import { MessageSquare, Eye } from "lucide-react";
 import { ReactionButton } from "./ReactionButtons";
 import { AnchorButton } from "./AnchorButton";
 import { TipButton } from "./TipButton";
+import { Checkbox } from "@/app/components/ui/checkbox";
+import { useComparisonStore } from "@/app/lib/store/comparisonStore";
 import type { NormalizedConfession } from "../../lib/utils/normalizeConfession";
 import { getTipStats, type TipStats } from "@/lib/services/tipping.service";
 
@@ -22,6 +24,7 @@ export const ConfessionCard = memo(({ confession }: Props) => {
   const [tipStats, setTipStats] = useState<TipStats | null>(
     confession.tipStats || null
   );
+  const { addItem, removeItem, isSelected } = useComparisonStore();
 
   useEffect(() => {
     if (!tipStats) {
@@ -36,6 +39,14 @@ export const ConfessionCard = memo(({ confession }: Props) => {
   const handleAnchorSuccess = (newTxHash: string) => {
     setIsAnchored(true);
     setTxHash(newTxHash);
+  };
+
+  const handleCompareToggle = (checked: boolean) => {
+    if (checked) {
+      addItem(confession.id);
+    } else {
+      removeItem(confession.id);
+    }
   };
 
   const timeAgo = (date: string) => {
@@ -83,9 +94,24 @@ export const ConfessionCard = memo(({ confession }: Props) => {
           </div>
         </div>
 
-        <p className="text-xs uppercase tracking-[0.16em] text-[var(--secondary)] sm:text-sm">
-          {timeAgo(confession.createdAt)}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-[var(--secondary)] sm:text-sm">
+            {timeAgo(confession.createdAt)}
+          </p>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`compare-${confession.id}`}
+              checked={isSelected(confession.id)}
+              onCheckedChange={handleCompareToggle}
+            />
+            <label
+              htmlFor={`compare-${confession.id}`}
+              className="text-xs text-[var(--secondary)] cursor-pointer"
+            >
+              Compare
+            </label>
+          </div>
+        </div>
       </div>
 
       <Link href={`/confessions/${confession.id}`} className="group block">

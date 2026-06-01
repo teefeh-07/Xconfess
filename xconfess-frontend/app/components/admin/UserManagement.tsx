@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi, User } from '@/app/lib/api/admin';
 import { queryKeys } from '@/app/lib/api/queryKeys';
 import { useAdminConfirmation } from '@/app/components/admin/useAdminConfirmation';
+import { Button } from '@/app/components/ui/button';
 
 export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,78 +107,89 @@ export default function UserManagement() {
             <div className="text-center py-8 text-gray-500">No users found</div>
           ) : (
             <>
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Username
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Admin
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {users.map((user: User) => (
-                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                        {user.username}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            user.is_active
-                              ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100'
-                              : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
-                          }`}
-                        >
-                          {user.is_active ? 'Active' : 'Banned'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {user.isAdmin ? 'Yes' : 'No'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex gap-2">
-                          {user.is_active ? (
-                            <button
-                              onClick={() => handleBan(user)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400"
-                            >
-                              Ban
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleUnban(user)}
-                              className="text-green-600 hover:text-green-900 dark:text-green-400"
-                            >
-                              Unban
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setSelectedUser(user)}
-                            className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400"
-                          >
-                            History
-                          </button>
-                        </div>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Username
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Admin
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Created
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky right-0 bg-gray-50 dark:bg-gray-700 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-gray-300 dark:after:bg-gray-600">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {users.map((user: User) => (
+                      <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                          {user.username}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              user.is_active
+                                ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100'
+                                : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
+                            }`}
+                          >
+                            {user.is_active ? 'Active' : 'Banned'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {user.isAdmin ? 'Yes' : 'No'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white dark:bg-gray-800 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-gray-200 dark:after:bg-gray-700">
+                          <div className="flex gap-2">
+                            {user.is_active ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleBan(user)}
+                                aria-label={`Ban ${user.username}`}
+                                className="text-red-600 hover:text-red-900 dark:text-red-400 p-0"
+                              >
+                                Ban
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleUnban(user)}
+                                aria-label={`Unban ${user.username}`}
+                                className="text-green-600 hover:text-green-900 dark:text-green-400 p-0"
+                              >
+                                Unban
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedUser(user)}
+                              aria-label={`View history for ${user.username}`}
+                              className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 p-0"
+                            >
+                              History
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
@@ -187,20 +199,24 @@ export default function UserManagement() {
                     results
                   </div>
                   <div className="flex gap-2">
-                    <button
+                    <Button
+                      type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                       disabled={page === 1}
+                      aria-label="Previous page"
                       className="px-4 py-2 border rounded-md disabled:opacity-50"
                     >
                       Previous
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      type="button"
                       onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                       disabled={page === totalPages}
+                      aria-label="Next page"
                       className="px-4 py-2 border rounded-md disabled:opacity-50"
                     >
                       Next
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -217,12 +233,15 @@ export default function UserManagement() {
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                 User History: {selectedUser.username}
               </h3>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setSelectedUser(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Close user history"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0"
               >
                 ✕
-              </button>
+              </Button>
             </div>
             <UserHistory userId={selectedUser.id.toString()} />
           </div>

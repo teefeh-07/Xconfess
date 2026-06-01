@@ -4,13 +4,13 @@ import Redis from 'ioredis';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 
-interface DependencyStatus {
+export interface DependencyStatus {
   status: 'up' | 'degraded' | 'down';
   details?: Record<string, any>;
   error?: string;
 }
 
-interface WebSocketHealthResult {
+export interface WebSocketHealthResult {
   status: 'healthy' | 'degraded' | 'unhealthy';
   timestamp: string;
   websocket: {

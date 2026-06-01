@@ -29,7 +29,7 @@ type MockQueue = ReturnType<typeof makeMockQueue>;
 
 function buildModule(
   queueOverrides: Partial<Record<QueueName, MockQueue>>,
-  jobsEnabled = true,
+  backgroundJobsValue?: string,
 ) {
   const queues = Object.fromEntries(
     QUEUE_NAMES.map((name) => [name, queueOverrides[name] ?? makeMockQueue()]),
@@ -43,9 +43,7 @@ function buildModule(
         useValue: {
           get: jest.fn((key: string) =>
             key === 'ENABLE_BACKGROUND_JOBS'
-              ? jobsEnabled
-                ? 'true'
-                : 'false'
+              ? backgroundJobsValue
               : undefined,
           ),
         },
@@ -62,22 +60,77 @@ describe('QueueHealthIndicator', () => {
   let indicator: QueueHealthIndicator;
 
   describe('when background jobs are disabled', () => {
-    beforeEach(async () => {
-      const module: TestingModule = await buildModule({}, false);
-      indicator = module.get(QueueHealthIndicator);
+    describe('with ENABLE_BACKGROUND_JOBS set to "false"', () => {
+      beforeEach(async () => {
+        const module: TestingModule = await buildModule({}, 'false');
+        indicator = module.get(QueueHealthIndicator);
+      });
+
+      it('returns up with mode=disabled and intentional disable reason', async () => {
+        const result = await indicator.isHealthy('queues');
+        expect(result.queues.status).toBe('up');
+        expect(result.queues).toMatchObject({
+          mode: 'disabled',
+          severity: 'info',
+        });
+        expect(result.queues.reason).toContain('"false"');
+        expect(result.queues.reason).toContain('intentionally disabled');
+      });
     });
 
-    it('returns up with mode=disabled and skips queue checks', async () => {
+    describe('with ENABLE_BACKGROUND_JOBS not set (undefined)', () => {
+      beforeEach(async () => {
+        const module: TestingModule = await buildModule({}, undefined);
+        indicator = module.get(QueueHealthIndicator);
+      });
+
+      it('returns up with mode=disabled and unset reason', async () => {
+        const result = await indicator.isHealthy('queues');
+        expect(result.queues.status).toBe('up');
+        expect(result.queues).toMatchObject({
+          mode: 'disabled',
+          severity: 'info',
+        });
+        expect(result.queues.reason).toContain('not set');
+        expect(result.queues.reason).toContain('defaults to disabled');
+      });
+    });
+
+    describe('with ENABLE_BACKGROUND_JOBS set to unexpected value', () => {
+      beforeEach(async () => {
+        const module: TestingModule = await buildModule({}, 'yes');
+        indicator = module.get(QueueHealthIndicator);
+      });
+
+      it('returns up with mode=disabled and misconfiguration reason', async () => {
+        const result = await indicator.isHealthy('queues');
+        expect(result.queues.status).toBe('up');
+        expect(result.queues).toMatchObject({
+          mode: 'disabled',
+          severity: 'info',
+        });
+        expect(result.queues.reason).toContain('"yes"');
+        expect(result.queues.reason).toContain('expected "true"');
+      });
+    });
+
+    it('skips queue checks entirely when disabled', async () => {
+      const module: TestingModule = await buildModule({}, 'false');
+      indicator = module.get(QueueHealthIndicator);
+
       const result = await indicator.isHealthy('queues');
-      expect(result.queues.status).toBe('up');
-      expect(result.queues).toMatchObject({ mode: 'disabled' });
+      // Per-queue details must not be present when disabled
+      expect(result.queues['notifications']).toBeUndefined();
+      expect(result.queues['notifications-dlq']).toBeUndefined();
+      expect(result.queues['export-queue']).toBeUndefined();
+      expect(result.queues['confession-draft-publisher']).toBeUndefined();
     });
   });
 
   describe('when background jobs are enabled', () => {
     describe('and all queues have workers', () => {
       beforeEach(async () => {
-        const module: TestingModule = await buildModule({});
+        const module: TestingModule = await buildModule({}, 'true');
         indicator = module.get(QueueHealthIndicator);
       });
 
@@ -89,13 +142,23 @@ describe('QueueHealthIndicator', () => {
           workers: 1,
         });
       });
+
+      it('does not include disabled mode fields when enabled', async () => {
+        const result = await indicator.isHealthy('queues');
+        expect(result.queues.mode).toBeUndefined();
+        expect(result.queues.reason).toBeUndefined();
+        expect(result.queues.severity).toBeUndefined();
+      });
     });
 
     describe('and a worker-required queue has no workers', () => {
       beforeEach(async () => {
-        const module: TestingModule = await buildModule({
-          notifications: makeMockQueue(0),
-        });
+        const module: TestingModule = await buildModule(
+          {
+            notifications: makeMockQueue(0),
+          },
+          'true',
+        );
         indicator = module.get(QueueHealthIndicator);
       });
 
@@ -125,9 +188,12 @@ describe('QueueHealthIndicator', () => {
 
     describe('and the DLQ has no workers', () => {
       beforeEach(async () => {
-        const module: TestingModule = await buildModule({
-          'notifications-dlq': makeMockQueue(0),
-        });
+        const module: TestingModule = await buildModule(
+          {
+            'notifications-dlq': makeMockQueue(0),
+          },
+          'true',
+        );
         indicator = module.get(QueueHealthIndicator);
       });
 
@@ -149,9 +215,12 @@ describe('QueueHealthIndicator', () => {
             .mockRejectedValue(new Error('ECONNREFUSED')),
           getJobCounts: jest.fn().mockResolvedValue({}),
         };
-        const module: TestingModule = await buildModule({
-          'export-queue': broken,
-        });
+        const module: TestingModule = await buildModule(
+          {
+            'export-queue': broken,
+          },
+          'true',
+        );
         indicator = module.get(QueueHealthIndicator);
       });
 
@@ -170,9 +239,12 @@ describe('QueueHealthIndicator', () => {
           failed: 1,
           delayed: 0,
         });
-        const module: TestingModule = await buildModule({
-          notifications: queueWithJobs,
-        });
+        const module: TestingModule = await buildModule(
+          {
+            notifications: queueWithJobs,
+          },
+          'true',
+        );
         indicator = module.get(QueueHealthIndicator);
       });
 

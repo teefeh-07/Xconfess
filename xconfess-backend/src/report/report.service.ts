@@ -1,14 +1,24 @@
 import {
   Injectable,
-  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
-import { Report, ReportStatus } from './entities/report.entity';
-import { CreateReportDto } from './entities/dto/create-report.dto';
-import { UpdateReportDto } from './entities/dto/update-report.dto';
+import { Report, ReportStatus, ReportType } from '../admin/entities/report.entity';
+
+export interface LegacyCreateReportDto {
+  confessionId: string;
+  type: ReportType;
+  reason?: string;
+  note?: string;
+}
+
+export interface LegacyUpdateReportDto {
+  status: ReportStatus.RESOLVED | ReportStatus.DISMISSED;
+  note?: string;
+  resolutionReason?: string;
+}
 
 @Injectable()
 export class ReportService {
@@ -18,7 +28,7 @@ export class ReportService {
   ) {}
 
   async create(
-    dto: CreateReportDto,
+    dto: LegacyCreateReportDto,
     reporterId: number | null,
   ): Promise<Report> {
     const idempotencyKey = createHash('sha256')
@@ -33,8 +43,10 @@ export class ReportService {
     }
 
     const report = this.reportRepository.create({
-      ...dto,
+      confessionId: dto.confessionId,
       reporterId,
+      type: dto.type,
+      reason: dto.reason ?? dto.note ?? null,
       idempotencyKey,
     });
 
@@ -45,24 +57,26 @@ export class ReportService {
     return this.reportRepository.find({ order: { createdAt: 'DESC' } });
   }
 
-  async findOne(id: number): Promise<Report> {
+  async findOne(id: string): Promise<Report> {
     const report = await this.reportRepository.findOne({ where: { id } });
     if (!report) throw new NotFoundException(`Report #${id} not found`);
     return report;
   }
 
-  async updateStatus(id: number, dto: UpdateReportDto): Promise<Report> {
+  async updateStatus(id: string, dto: LegacyUpdateReportDto): Promise<Report> {
     const report = await this.findOne(id);
     report.status = dto.status;
-    if (dto.note !== undefined) report.note = dto.note;
+    if (dto.note !== undefined || dto.resolutionReason !== undefined) {
+      report.resolutionNotes = dto.note ?? dto.resolutionReason ?? null;
+    }
     return this.reportRepository.save(report);
   }
 
-  async resolve(id: number, note?: string): Promise<Report> {
+  async resolve(id: string, note?: string): Promise<Report> {
     return this.updateStatus(id, { status: ReportStatus.RESOLVED, note });
   }
 
-  async dismiss(id: number, note?: string): Promise<Report> {
+  async dismiss(id: string, note?: string): Promise<Report> {
     return this.updateStatus(id, { status: ReportStatus.DISMISSED, note });
   }
 }

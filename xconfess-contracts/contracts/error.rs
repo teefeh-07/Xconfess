@@ -45,7 +45,6 @@ pub enum ErrorClassification {
 /// Within each range:
 /// - First 10-50 codes are stable and well-documented
 /// - Higher codes allow for future additions without shifting existing ones
-
 pub mod codes {
     /// ====== Global/Common Errors (1000-1099) ======
     pub const UNAUTHORIZED: u32 = 1000;
@@ -99,43 +98,43 @@ pub enum ContractError {
     /// ===========================================
     /// Global / common errors
     /// ===========================================
-    Unauthorized,          // caller not authorized (1000)
-    NotFound,              // requested entity not found (1001)
-    InvalidInput,          // input value invalid (1002)
-    Overflow,              // arithmetic overflow (1003)
-    CooldownActive,        // update cooldown not elapsed (1004)
-    PayloadTooLarge,       // emitted payload or metadata exceeds configured bound (1005)
-    MetadataTooLong,       // metadata field length exceeded (1006)
+    Unauthorized, // caller not authorized (1000)
+    NotFound,        // requested entity not found (1001)
+    InvalidInput,    // input value invalid (1002)
+    Overflow,        // arithmetic overflow (1003)
+    CooldownActive,  // update cooldown not elapsed (1004)
+    PayloadTooLarge, // emitted payload or metadata exceeds configured bound (1005)
+    MetadataTooLong, // metadata field length exceeded (1006)
 
     /// ===========================================
     /// Confession module errors
     /// ===========================================
-    ConfessionExists,      // trying to create a duplicate confession (2000)
-    ConfessionEmpty,       // empty confession content (2001)
-    ConfessionTooLong,     // content exceeds max length (2002)
+    ConfessionExists, // trying to create a duplicate confession (2000)
+    ConfessionEmpty,   // empty confession content (2001)
+    ConfessionTooLong, // content exceeds max length (2002)
 
     /// ===========================================
     /// Reaction module errors
     /// ===========================================
-    ReactionExists,        // user already reacted (3000)
-    InvalidReactionType,   // reaction type not recognized (3001)
+    ReactionExists, // user already reacted (3000)
+    InvalidReactionType, // reaction type not recognized (3001)
 
     /// ===========================================
     /// Report module errors
     /// ===========================================
-    ReportExists,          // user already reported (4000)
-    InvalidReportReason,   // report reason not allowed (4001)
-    ReportReasonTooLong,   // report reason exceeds configured max (4002)
+    ReportExists, // user already reported (4000)
+    InvalidReportReason, // report reason not allowed (4001)
+    ReportReasonTooLong, // report reason exceeds configured max (4002)
 
     /// ===========================================
     /// Governance module errors
     /// ===========================================
-    ProposalNotFound,      // governance proposal not found (5000)
-    UnauthorizedApproval,  // caller not authorized to approve (5001)
-    QuorumNotReached,      // quorum threshold not met (5002)
-    AlreadyApproved,       // caller already approved this proposal (5003)
-    AlreadyExecuted,       // proposal already executed (5004)
-    InvalidAction,         // invalid governance action (5005)
+    ProposalNotFound, // governance proposal not found (5000)
+    UnauthorizedApproval, // caller not authorized to approve (5001)
+    QuorumNotReached,     // quorum threshold not met (5002)
+    AlreadyApproved,      // caller already approved this proposal (5003)
+    AlreadyExecuted,      // proposal already executed (5004)
+    InvalidAction,        // invalid governance action (5005)
 }
 
 impl ContractError {

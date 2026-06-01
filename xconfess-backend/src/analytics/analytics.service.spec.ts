@@ -391,8 +391,8 @@ describe('toWindowBoundaries()', () => {
   it('REGRESSION: consecutive 7-day windows share no overlap at the boundary midnight', () => {
     // Window A ends at midnight of 2026-03-27; Window B starts at the same instant.
     const windowA = toWindowBoundaries(7, REF);
-    // Shift REF forward by 7 days to get the next window
-    const nextRef = new Date(REF.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // Shift REF so the next rolling window starts at windowA.endAt.
+    const nextRef = new Date(REF.getTime() + 8 * 24 * 60 * 60 * 1000);
     const windowB = toWindowBoundaries(7, nextRef);
 
     // windowA.endAt === windowB.startAt (shared boundary)

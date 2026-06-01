@@ -11,6 +11,8 @@ export interface RetentionPolicyConfig {
   auditCleanupActions: boolean;
 }
 
+type CleanupCandidate = Pick<ExportRequest, 'id' | 'status' | 'createdAt'>;
+
 @Injectable()
 export class DataCleanupService {
   private readonly logger = new Logger(DataCleanupService.name);
@@ -41,23 +43,37 @@ export class DataCleanupService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async purgeOldExports(): Promise<void> {
     const cutoff = this.getRetentionCutoff();
+    let eligibleExports: CleanupCandidate[] = [];
+
     this.logger.log(
       `Starting scheduled export cleanup. Retaining exports created after ${cutoff.toISOString()} (${this.retentionDays} days)`,
     );
 
     try {
-      const eligibleExports = await this.repo.find({
+      eligibleExports = await this.repo.find({
         where: {
           createdAt: LessThan(cutoff),
           status: In(['PENDING', 'PROCESSING', 'READY', 'FAILED']),
         },
-        select: ['id', 'userId', 'status', 'createdAt'],
+        select: ['id', 'status', 'createdAt'],
       });
 
       if (eligibleExports.length === 0) {
-        this.logger.log('No expired exports found to clean up');
+        this.logger.log(
+          `No expired exports found to clean up. ${this.formatCleanupSummary(
+            eligibleExports,
+            cutoff,
+          )}`,
+        );
         return;
       }
+
+      this.logger.log(
+        `Found ${eligibleExports.length} expired export request(s) eligible for cleanup. ${this.formatCleanupSummary(
+          eligibleExports,
+          cutoff,
+        )}`,
+      );
 
       const result = await this.repo.update(
         {
@@ -68,7 +84,10 @@ export class DataCleanupService {
       );
 
       this.logger.log(
-        `Expired ${result.affected ?? 0} export(s) older than ${this.retentionDays} days`,
+        `Expired ${result.affected ?? 0} export request(s). ${this.formatCleanupSummary(
+          eligibleExports,
+          cutoff,
+        )}`,
       );
 
       if (this.auditCleanupActions) {
@@ -76,14 +95,16 @@ export class DataCleanupService {
       }
     } catch (error) {
       this.logger.error(
-        `Export cleanup failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Export cleanup failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }. ${this.formatCleanupSummary(eligibleExports, cutoff)}`,
       );
       throw error;
     }
   }
 
   private async logCleanupAuditTrail(
-    exports: { id: string; userId: string; status: string; createdAt: Date }[],
+    exports: CleanupCandidate[],
     cutoff: Date,
   ): Promise<void> {
     for (const exportRecord of exports) {
@@ -106,10 +127,36 @@ export class DataCleanupService {
         });
       } catch (auditError) {
         this.logger.warn(
-          `Failed to log audit trail for export ${exportRecord.id}: ${auditError instanceof Error ? auditError.message : 'Unknown error'}`,
+          `Failed to log audit trail for export requestId=${exportRecord.id}: ${auditError instanceof Error ? auditError.message : 'Unknown error'}`,
         );
       }
     }
+  }
+
+  private formatCleanupSummary(
+    exports: CleanupCandidate[],
+    cutoff: Date,
+  ): string {
+    const statusCounts = exports.reduce<Record<string, number>>(
+      (counts, exportRecord) => ({
+        ...counts,
+        [exportRecord.status]: (counts[exportRecord.status] ?? 0) + 1,
+      }),
+      {},
+    );
+    const requestIds = exports
+      .map((exportRecord) => exportRecord.id)
+      .slice(0, 10);
+    const omittedRequestIds = Math.max(exports.length - requestIds.length, 0);
+
+    return [
+      `retentionDays=${this.retentionDays}`,
+      `cutoff=${cutoff.toISOString()}`,
+      `eligibleCount=${exports.length}`,
+      `statusCounts=${JSON.stringify(statusCounts)}`,
+      `requestIds=${JSON.stringify(requestIds)}`,
+      `omittedRequestIds=${omittedRequestIds}`,
+    ].join(' ');
   }
 
   async getRetentionPolicy(): Promise<RetentionPolicyConfig> {

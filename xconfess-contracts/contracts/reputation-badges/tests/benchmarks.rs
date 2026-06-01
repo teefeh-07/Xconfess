@@ -1,11 +1,11 @@
-use soroban_sdk::{Address, Env, testutils::Address as _};
-use reputation_badges::{ReputationBadges, ReputationBadgesClient, BadgeType};
+use reputation_badges::{BadgeType, ReputationBadges, ReputationBadgesClient};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn setup(env: &Env) -> (ReputationBadgesClient<'static>, Address) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, ReputationBadges);
-    let client = ReputationBadgesClient::new(&env, &contract_id);
-    let user = Address::generate(&env);
+    let contract_id = env.register(ReputationBadges, ());
+    let client = ReputationBadgesClient::new(env, &contract_id);
+    let user = Address::generate(env);
     (client, user)
 }
 
@@ -16,10 +16,10 @@ fn benchmark_mint_badge() {
 
     env.cost_estimate().budget().reset_default();
     let _ = client.mint_badge(&user, &BadgeType::ConfessionStarter);
-    
+
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
-    
+
     println!("GAS_METRIC:mint_badge:cpu:{}", cpu);
     println!("GAS_METRIC:mint_badge:mem:{}", mem);
 }
@@ -32,10 +32,10 @@ fn benchmark_get_badges() {
 
     env.cost_estimate().budget().reset_default();
     let _ = client.get_badges(&user);
-    
+
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
-    
+
     println!("GAS_METRIC:get_badges:cpu:{}", cpu);
     println!("GAS_METRIC:get_badges:mem:{}", mem);
 }

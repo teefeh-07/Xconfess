@@ -23,6 +23,11 @@ export interface TipVerificationResult {
   tip: Tip;
   isNew: boolean;
   isIdempotent: boolean;
+  conflictDetails?: {
+    reason: 'DIFFERENT_CONFESSION' | 'ALREADY_PROCESSING' | 'ALREADY_VERIFIED';
+    originalConfessionId?: string;
+    requestId?: string;
+  };
 }
 
 interface SettlementReceiptMetadata {
@@ -50,6 +55,28 @@ export class TippingService {
     private readonly confessionRepository: Repository<AnonymousConfession>,
     private readonly stellarService: StellarService,
   ) {}
+
+  /**
+   * Generate idempotency key for a tip verification request
+   * Issue #170: Idempotency key based on confessionId + txHash
+   * Format: SHA256(confessionId:txHash)
+   */
+  private generateIdempotencyKey(confessionId: string, txHash: string): string {
+    const keyMaterial = `${confessionId}:${txHash}`;
+    return crypto.createHash('sha256').update(keyMaterial).digest('hex');
+  }
+
+  /**
+   * Check if a tip with matching idempotency already exists
+   * Issue #170: Enforce replay safety with canonical responses
+   */
+  private async findTipByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<Tip | null> {
+    return this.tipRepository.findOne({
+      where: { idempotencyKey },
+    });
+  }
 
   private extractSettlementReceiptMetadata(
     txData: any,
@@ -243,7 +270,10 @@ export class TippingService {
 
   /**
    * Verify a tip transaction on-chain and record it
-   * Implements idempotency: duplicate requests return existing tip, conflicting payloads are rejected
+   * Issue #170: Implements idempotent verification with replay-safe semantics
+   * - Idempotency key: SHA256(confessionId:txHash)
+   * - Duplicate requests: Return canonical response without double-crediting
+   * - Conflict detection: Clear semantics for attempts that already settled
    * Issue #784: Uses locking to prevent double-crediting during concurrent verify/reconciliation
    * Issue #777: Updates retry metadata for debugging
    */
@@ -262,31 +292,65 @@ export class TippingService {
       );
     }
 
-    // Acquire processing lock to prevent race conditions
-    const lockResult = await this.acquireProcessingLock(dto.txId, 'verify');
+    // Generate idempotency key for replay safety
+    const idempotencyKey = this.generateIdempotencyKey(confessionId, dto.txId);
 
-    if (!lockResult.success && lockResult.existingTip) {
-      // Tip already exists - check for conflicts
-      if (lockResult.existingTip.confessionId !== confessionId) {
-        throw new ConflictException(
-          `Transaction ${dto.txId} was already used for a different confession. ` +
-            `Original confession: ${lockResult.existingTip.confessionId}`,
-        );
-      }
+    // Check if this exact request (confessionId + txHash) was already processed
+    const existingIdempotentTip = await this.findTipByIdempotencyKey(
+      idempotencyKey,
+    );
 
-      // Return existing tip - safe retry
+    if (existingIdempotentTip) {
+      // This exact request already completed - return canonical response
+      this.logger.debug(
+        `Idempotent replay detected for tip ${dto.txId} on confession ${confessionId}`,
+      );
+
       return {
-        tip: lockResult.existingTip,
+        tip: existingIdempotentTip,
         isNew: false,
         isIdempotent: true,
       };
     }
 
-    if (!lockResult.success) {
-      // Another process is currently handling this tip
-      throw new ConflictException(
-        `Transaction ${dto.txId} is currently being processed. Please retry in a moment.`,
+    // Check if this txId was used for a different confession
+    const tipByTxId = await this.tipRepository.findOne({
+      where: { txId: dto.txId },
+    });
+
+    if (tipByTxId && tipByTxId.confessionId !== confessionId) {
+      // Conflict: txId already used for a different confession
+      this.logger.warn(
+        `Conflict: txId ${dto.txId} attempted for confession ${confessionId} but already used for ${tipByTxId.confessionId}`,
       );
+
+      throw new ConflictException({
+        message: `Transaction ${dto.txId} was already used for a different confession`,
+        conflictReason: 'DIFFERENT_CONFESSION',
+        originalConfessionId: tipByTxId.confessionId,
+        canRetry: false,
+      });
+    }
+
+    // Acquire processing lock to prevent race conditions
+    const lockResult = await this.acquireProcessingLock(dto.txId, 'verify');
+
+    if (!lockResult.success && lockResult.existingTip) {
+      // Another process is currently handling this tip for this confession
+      throw new ConflictException({
+        message: `Transaction ${dto.txId} is currently being processed. Please retry in a moment.`,
+        conflictReason: 'ALREADY_PROCESSING',
+        canRetry: true,
+      });
+    }
+
+    if (!lockResult.success) {
+      // This should not happen, but safeguard against it
+      throw new ConflictException({
+        message: `Transaction ${dto.txId} is currently being processed. Please retry in a moment.`,
+        conflictReason: 'ALREADY_PROCESSING',
+        canRetry: true,
+      });
     }
 
     try {
@@ -333,6 +397,7 @@ export class TippingService {
         existingTip.confessionId = confessionId;
         existingTip.amount = processedData.amount;
         existingTip.senderAddress = processedData.senderAddress;
+        existingTip.idempotencyKey = idempotencyKey;
         existingTip.verificationStatus = TipVerificationStatus.VERIFIED;
         existingTip.verifiedAt = new Date();
         existingTip.lastChainStatus = 'verified';
@@ -343,6 +408,7 @@ export class TippingService {
             amount: processedData.amount,
             senderAddress: processedData.senderAddress,
           },
+          idempotencyKey: idempotencyKey,
         };
         savedTip = await this.tipRepository.save(existingTip);
       } else {
@@ -351,6 +417,7 @@ export class TippingService {
           confessionId,
           amount: processedData.amount,
           txId: dto.txId,
+          idempotencyKey: idempotencyKey,
           senderAddress: processedData.senderAddress,
           verificationStatus: TipVerificationStatus.VERIFIED,
           verifiedAt: new Date(),
@@ -363,6 +430,7 @@ export class TippingService {
               amount: processedData.amount,
               senderAddress: processedData.senderAddress,
             },
+            idempotencyKey: idempotencyKey,
           },
         });
         savedTip = await this.tipRepository.save(tip);

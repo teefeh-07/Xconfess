@@ -1,4 +1,3 @@
-// xconfess-backend/src/report/reports.service.ts
 import {
   Injectable,
   BadRequestException,
@@ -8,11 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  Report,
-  ReportStatus,
-  ReportType,
-} from '../admin/entities/report.entity';
+import { Report, ReportStatus, ReportType } from '../admin/entities/report.entity'
 import { CreateReportDto } from './dto/create-report.dto';
 import { ResolveReportDto } from './dto/resolve-report.dto';
 import { AnonymousConfession } from '../confession/entities/confession.entity';
@@ -112,11 +107,10 @@ export class ReportsService {
           anonymousReporterId: context.anonymousUserId,
         });
       } else {
-        // No stable identity for anonymous reporter, allow but log
-        this.logger.warn(
-          `Anonymous report without anonymousUserId for confession ${confessionId}`,
+        // Issue #1012: Anonymous reports MUST have an identity to enforce rate limits/deduplication
+        throw new BadRequestException(
+          'Anonymous reports require a valid anonymous identity',
         );
-        // For now, allow it, but in future, reject
       }
 
       const existingReport = await qb.getOne();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../lib/hooks/useAuth';
 
@@ -51,6 +51,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const redirectCount = useRef(0);
   const lastRedirectTime = useRef(0);
   const hasRedirected = useRef(false);
+  const [maxRedirectsReached, setMaxRedirectsReached] = useState(false);
 
   const isDevBypassEnabled =
     process.env.NODE_ENV === 'development' &&
@@ -65,6 +66,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       redirectCount.current = 0;
       lastRedirectTime.current = 0;
       hasRedirected.current = false;
+      setMaxRedirectsReached(false);
     }
   }, [isAuthenticated]);
 
@@ -79,6 +81,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
     // Exceeded max consecutive redirects → assume a loop, bail out
     if (redirectCount.current >= MAX_REDIRECT_ATTEMPTS) {
+      setMaxRedirectsReached(true);
       return;
     }
 
@@ -99,10 +102,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
    * the user is confirmed unauthenticated.
    */
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !isDevBypassEnabled) {
+    if (!isLoading && !isAuthenticated && !isDevBypassEnabled && !isSessionExpired) {
       safeRedirectToLogin();
     }
-  }, [isAuthenticated, isLoading, isDevBypassEnabled, safeRedirectToLogin]);
+  }, [isAuthenticated, isLoading, isDevBypassEnabled, safeRedirectToLogin, isSessionExpired]);
 
   // --- Render logic ---
 
@@ -167,7 +170,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   // This is a fallback for cases not caught by isSessionExpired
   if (
     !isAuthenticated &&
-    redirectCount.current >= MAX_REDIRECT_ATTEMPTS
+    maxRedirectsReached
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -199,6 +202,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
               redirectCount.current = 0;
               lastRedirectTime.current = 0;
               hasRedirected.current = false;
+              setMaxRedirectsReached(false);
               window.location.href = '/login';
             }}
             className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors"

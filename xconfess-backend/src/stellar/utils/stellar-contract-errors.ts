@@ -79,11 +79,15 @@ export const TIPPING_ERROR_CODES = {
  * Unified error code registry for all contract failures
  */
 export const CONTRACT_ERROR_CODES = {
-  ...ANCHOR_ERROR_CODES,
   ...TIPPING_ERROR_CODES,
+  TIPPING_METADATA_TOO_LONG: TIPPING_ERROR_CODES.METADATA_TOO_LONG,
+  TIPPING_UNAUTHORIZED: TIPPING_ERROR_CODES.UNAUTHORIZED,
+  ...ANCHOR_ERROR_CODES,
 } as const;
 
-type ErrorCodeValue = typeof CONTRACT_ERROR_CODES[keyof typeof CONTRACT_ERROR_CODES];
+type ErrorCodeValue =
+  | (typeof ANCHOR_ERROR_CODES)[keyof typeof ANCHOR_ERROR_CODES]
+  | (typeof TIPPING_ERROR_CODES)[keyof typeof TIPPING_ERROR_CODES];
 
 /**
  * Error classification map: determines retry strategy and HTTP response code

@@ -1,6 +1,7 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  setupFiles: ['<rootDir>/jest.setup.ts'],
   transform: {
     '^.+\\.tsx?$': [
       'ts-jest',
@@ -19,5 +20,10 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/xconfess-backend/'],
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
+    '^@nestjs/bull$': '@nestjs/bullmq',
+    '^bull$': 'bullmq',
+    '^bcrypt$': 'bcryptjs',
+    '^@faker-js/faker$': '<rootDir>/test/utils/faker-stub.ts',
+    '^@faker-js/faker/\\.$': '<rootDir>/test/utils/faker-stub.ts',
   },
 };

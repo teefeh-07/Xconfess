@@ -205,11 +205,7 @@ fn apply_reputation_decay(env: &Env, user: &Address) -> i128 {
     let current_timestamp = env.ledger().timestamp();
 
     // Calculate epochs elapsed
-    let time_elapsed = if current_timestamp > last_update {
-        current_timestamp - last_update
-    } else {
-        0
-    };
+    let time_elapsed = current_timestamp.saturating_sub(last_update);
 
     let epochs_elapsed = (time_elapsed / EPOCH_DURATION) as u32;
 
@@ -447,11 +443,7 @@ impl ReputationBadges {
         let current_timestamp = env.ledger().timestamp();
 
         // Calculate epochs elapsed
-        let time_elapsed = if current_timestamp > last_update {
-            current_timestamp - last_update
-        } else {
-            0
-        };
+        let time_elapsed = current_timestamp.saturating_sub(last_update);
 
         let epochs_elapsed = (time_elapsed / EPOCH_DURATION) as u32;
 
@@ -799,10 +791,7 @@ impl ReputationBadges {
     /// Applies decay to all active users by incrementing the global epoch
     /// This is a bounded operation - processes a batch of user addresses provided
     /// Returns the number of users whose reputation was updated
-    pub fn recalibrate_epoch(
-        env: Env,
-        user_batch: Vec<Address>,
-    ) -> Result<u32, Error> {
+    pub fn recalibrate_epoch(env: Env, user_batch: Vec<Address>) -> Result<u32, Error> {
         let admin = get_admin(&env)?;
         admin.require_auth();
 
@@ -837,10 +826,8 @@ impl ReputationBadges {
             .set(&current_epoch_key, &(current_epoch + 1));
 
         let event_topic = Symbol::new(&env, "epoch_recalibrated");
-        env.events().publish(
-            (event_topic, admin),
-            (current_epoch + 1, updated_count),
-        );
+        env.events()
+            .publish((event_topic, admin), (current_epoch + 1, updated_count));
 
         Ok(updated_count)
     }

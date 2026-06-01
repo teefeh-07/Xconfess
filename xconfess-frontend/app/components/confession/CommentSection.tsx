@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { Button } from "@/app/components/ui/button";
 import { CommentItem } from "./CommentItem";
 import { CommentSectionSkeleton } from "./LoadingSkeleton";
-import { useCommentsQuery, useCreateCommentMutation } from "@/app/lib/hooks/useComments";
+import {
+  useCommentsQuery,
+  useCreateCommentMutation,
+} from "@/app/lib/hooks/useComments";
 import { type Comment } from "@/app/lib/types/confession";
 
 interface CommentSectionProps {
@@ -53,9 +56,9 @@ export function CommentSection({
     }
 
     return (
-      <ul className="mt-3 list-none space-y-3 p-0">
+      <ul className="mt-3 min-w-0 list-none space-y-3 p-0">
         {nestedReplies.map((reply) => (
-          <li key={reply.id}>
+          <li key={reply.id} className="min-w-0">
             <CommentItem comment={reply} onReply={handleReply} isReply />
             {renderReplies(reply.id, depth + 1)}
           </li>
@@ -109,7 +112,7 @@ export function CommentSection({
   return (
     <section
       id="comments"
-      className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-6"
+      className="max-w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 sm:p-6"
       aria-labelledby="comments-heading"
     >
       <h2
@@ -127,15 +130,17 @@ export function CommentSection({
         aria-label="Add a comment"
       >
         {replyTo && (
-          <div className="mb-2 flex items-center justify-between rounded bg-zinc-800/50 px-3 py-2 text-sm text-zinc-400">
-            <span>Replying to {replyTo.author || "Anonymous"}</span>
+          <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded bg-zinc-800/50 px-3 py-2 text-sm text-zinc-400">
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+              Replying to {replyTo.author || "Anonymous"}
+            </span>
             <button
               type="button"
               onClick={() => {
                 setReplyTo(null);
                 setContent("");
               }}
-              className="text-zinc-500 hover:text-zinc-300"
+              className="min-h-10 shrink-0 touch-manipulation text-zinc-500 hover:text-zinc-300"
             >
               Cancel
             </button>
@@ -150,7 +155,7 @@ export function CommentSection({
           }
           disabled={!isAuthenticated}
           rows={3}
-          className="min-h-20 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 disabled:opacity-60"
+          className="min-h-20 w-full min-w-0 resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-zinc-200 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 disabled:opacity-60"
           maxLength={2000}
           aria-label="Comment text"
         />
@@ -198,9 +203,9 @@ export function CommentSection({
 
       {!error && comments.length > 0 && (
         <>
-          <ul className="m-0 list-none space-y-3 p-0">
+          <ul className="m-0 min-w-0 list-none space-y-3 p-0">
             {topLevelComments.map((comment) => (
-              <li key={comment.id}>
+              <li key={comment.id} className="min-w-0">
                 <CommentItem
                   comment={comment}
                   onReply={handleReply}

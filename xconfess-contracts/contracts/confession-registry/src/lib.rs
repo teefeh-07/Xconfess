@@ -92,6 +92,19 @@ pub struct ConfessionDeletedEvent {
     pub correlation_id: Option<Symbol>,
 }
 
+/// Pagination result returned by `list_confessions`.
+///
+/// `has_next_page` is `true` when more items exist beyond this page.
+/// `next_cursor` is the ID to pass as `cursor` on the next call; it is
+/// `None` on the terminal page.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Page {
+    pub items: Vec<Confession>,
+    pub has_next_page: bool,
+    pub next_cursor: Option<u64>,
+}
+
 /// Storage keys used by the contract.
 #[contracttype]
 pub enum DataKey {
@@ -313,6 +326,55 @@ impl ConfessionRegistry {
             .instance()
             .get(&DataKey::AuthorConfessions(author))
             .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// List confessions with cursor-based pagination.
+    ///
+    /// - `cursor`: exclusive lower bound (last seen ID). Pass `None` to start from the beginning.
+    /// - `limit`: maximum number of items to return (capped at 50).
+    ///
+    /// Returns a `Page<Confession>` with `has_next_page` and `next_cursor` so callers
+    /// can detect terminal pages without guessing.
+    pub fn list_confessions(env: Env, cursor: Option<u64>, limit: u32) -> Page {
+        let limit = limit.min(50) as u64;
+        let start = cursor.unwrap_or(0) + 1;
+        let total: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextId)
+            .unwrap_or(1u64)
+            .saturating_sub(1);
+
+        let mut items: Vec<Confession> = Vec::new(&env);
+        let mut id = start;
+        // Fetch up to limit+1 to detect whether a next page exists.
+        while id <= total && items.len() as u64 <= limit {
+            if let Some(c) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Confession>(&DataKey::Confession(id))
+            {
+                items.push_back(c);
+            }
+            id += 1;
+        }
+
+        let has_next_page = items.len() as u64 > limit;
+        if has_next_page {
+            items.pop_back();
+        }
+
+        let next_cursor = if has_next_page {
+            items.last().map(|c| c.id)
+        } else {
+            None
+        };
+
+        Page {
+            items,
+            has_next_page,
+            next_cursor,
+        }
     }
 
     /// Get the total number of confessions created.

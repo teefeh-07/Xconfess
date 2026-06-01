@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev . --webpack",
+    "dev": "next dev .",
     "build": "next build .",
     "start": "next start .",
     "lint": "eslint",
     "test": "jest --no-coverage",
+    "test:e2e": "npx playwright test",
+    "test:smoke": "npx playwright test tests/e2e/public-pages-smoke.spec.ts --project=smoke",
     "generate-api": "npx tsx scripts/generate-openapi-client.ts",
     "typecheck:api": "npx tsx -e \"require('./app/lib/api/generated/types.ts')\" 2>/dev/null || echo 'Generated API types not found. Run generate-api first.'"
   },
@@ -48,6 +50,13 @@
     "zod": "^4.3.5",
     "zustand": "^5.0.10"
   },
+<<<<<<< HEAD
+=======
+  "optionalDependencies": {
+    "@next/swc-win32-x64-msvc": "^16.2.1",
+    "lightningcss-win32-x64-msvc": "^1.30.2"
+  },
+>>>>>>> 7532a4f1f0d202b7718dcc2d60a9fb40a0f4be4e
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",

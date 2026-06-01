@@ -5,7 +5,6 @@ process.env.NEXT_PUBLIC_API_URL = "http://localhost:3001/api";
 
 import { GET } from "../route";
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 
 jest.mock("next/headers");
 jest.mock("next/server", () => ({
@@ -37,7 +36,7 @@ describe("GET /api/auth/session", () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/auth/session"),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(response).toEqual({ authenticated: true, user: mockUser });
   });
@@ -60,12 +59,12 @@ describe("GET /api/auth/session", () => {
     expect(global.fetch).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining("/auth/session"),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("/auth/me"),
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(response).toEqual({ authenticated: true, user: mockUser });
   });

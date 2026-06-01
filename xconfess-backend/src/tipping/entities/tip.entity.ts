@@ -38,6 +38,15 @@ export class Tip {
   txId: string;
 
   @Column({
+    name: 'idempotency_key',
+    type: 'varchar',
+    length: 128,
+    nullable: true,
+  })
+  @Index()
+  idempotencyKey: string | null;
+
+  @Column({
     name: 'sender_address',
     type: 'varchar',
     length: 56,

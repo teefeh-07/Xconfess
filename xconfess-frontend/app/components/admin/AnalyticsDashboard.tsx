@@ -3,6 +3,7 @@
 import { Analytics } from '@/app/lib/api/admin';
 import { useExportCSV } from '@/app/lib/hooks/useExportCSV';
 import { ExportCsvButton } from '@/app/components/admin/ExportCsvButton';
+import { AnalyticsEmptyState } from '@/app/components/analytics/AnalyticsEmptyState';
 import {
   LineChart,
   Line,
@@ -133,65 +134,92 @@ export default function AnalyticsDashboard({ analytics }: AnalyticsDashboardProp
       {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Confessions Over Time */}
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex flex-col min-h-[380px]">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Confessions Over Time
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={confessionsOverTimeData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="count" stroke="#8884d8" name="Confessions" />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="flex-grow">
+            {confessionsOverTimeData.length === 0 ? (
+              <AnalyticsEmptyState 
+                message="No confession data yet" 
+                description="Activity over time will appear here" 
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={confessionsOverTimeData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="count" stroke="#8884d8" name="Confessions" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
 
         {/* Reports by Status */}
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex flex-col min-h-[380px]">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Reports by Status
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={reportsByStatusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) =>
-                  `${name} ${(((percent ?? 0) as number) * 100).toFixed(0)}%`
-                }
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {reportsByStatusData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="flex-grow">
+            {reportsByStatusData.length === 0 ? (
+              <AnalyticsEmptyState 
+                message="No reports yet" 
+                description="Report distribution will appear here" 
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={reportsByStatusData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) =>
+                      `${name} ${(((percent ?? 0) as number) * 100).toFixed(0)}%`
+                    }
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {reportsByStatusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
 
         {/* Reports by Type */}
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex flex-col min-h-[380px]">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Reports by Type
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={reportsByTypeData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="value" fill="#8884d8" name="Count" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex-grow">
+            {reportsByTypeData.length === 0 ? (
+              <AnalyticsEmptyState 
+                message="No reports yet" 
+                description="Types of reports will appear here" 
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={reportsByTypeData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="value" fill="#8884d8" name="Count" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
 
         {/* Moderation Stats */}

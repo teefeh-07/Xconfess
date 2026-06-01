@@ -1,7 +1,7 @@
 // components/notifications/NotificationPreferences.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Save, Bell, Mail } from "lucide-react";
 import { NotificationPreferences as Preferences } from "@/app/types/notifications";
 import { notificationApi } from "@/app/lib/api/notification";
@@ -33,21 +33,21 @@ export function NotificationPreferences({
   const [saved, setSaved] = useState(false);
   const toast = useGlobalToast();
 
-  useEffect(() => {
-    fetchPreferences();
-  }, []);
-
-  const fetchPreferences = async () => {
+  const fetchPreferences = useCallback(async () => {
     setLoading(true);
     try {
       const data = await notificationApi.getPreferences();
       setPreferences(data);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load notification preferences.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchPreferences();
+  }, [fetchPreferences]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -59,7 +59,7 @@ export function NotificationPreferences({
       setSaved(true);
       toast.success("Notification preferences saved.");
       setTimeout(() => setSaved(false), 3000);
-    } catch (error) {
+    } catch {
       toast.error("Failed to save preferences. Please try again.");
     } finally {
       setSaving(false);

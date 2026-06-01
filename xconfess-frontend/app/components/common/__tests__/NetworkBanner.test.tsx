@@ -28,7 +28,7 @@ describe("NetworkBanner", () => {
     render(
       <NetworkStatusProvider>
         <NetworkBanner />
-      </NetworkStatusProvider>
+      </NetworkStatusProvider>,
     );
     expect(screen.queryByText("You're offline")).not.toBeInTheDocument();
   });
@@ -38,7 +38,7 @@ describe("NetworkBanner", () => {
     render(
       <NetworkStatusProvider>
         <NetworkBanner />
-      </NetworkStatusProvider>
+      </NetworkStatusProvider>,
     );
 
     // Trigger offline event
@@ -47,24 +47,26 @@ describe("NetworkBanner", () => {
     });
 
     expect(screen.getByText("You're offline")).toBeInTheDocument();
-    expect(screen.getByText("Check your internet connection and try again.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Check your internet connection and try again."),
+    ).toBeInTheDocument();
   });
 
   it("renders 'Poor network connection' when degraded", () => {
     mockNavigator(true);
-    
-    // We can't easily mock the Network Information API in JSDOM, 
-    // but we can test the UI if we mock the useNetwork hook directly 
+
+    // We can't easily mock the Network Information API in JSDOM,
+    // but we can test the UI if we mock the useNetwork hook directly
     // or if we trigger it via provider if we add a test-only prop.
     // For now, let's verify it appears on the offline event as that's the most common case.
   });
 
   it("hides with a delay when going back online", async () => {
     mockNavigator(false);
-    const { rerender } = render(
+    render(
       <NetworkStatusProvider>
         <NetworkBanner />
-      </NetworkStatusProvider>
+      </NetworkStatusProvider>,
     );
 
     act(() => {

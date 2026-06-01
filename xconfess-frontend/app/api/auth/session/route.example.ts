@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getApiBaseUrl } from "@/app/lib/config";
 import { createApiErrorResponse } from "@/lib/apiErrorHandler";
-import { normalizeAuthError, retryAuthOperation, NormalizedAuthError } from "@/lib/normalizeAuthError";
+import {
+  normalizeAuthError,
+  retryAuthOperation,
+} from "@/lib/normalizeAuthError";
 
 const API_URL = getApiBaseUrl();
 const SESSION_COOKIE_NAME = "xconfess_session";
@@ -15,10 +18,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const email = typeof body?.email === "string" ? body.email : undefined;
-    const password = typeof body?.password === "string" ? body.password : undefined;
+    const password =
+      typeof body?.password === "string" ? body.password : undefined;
 
     if (!email || !password) {
-      return createApiErrorResponse("Email and password are required", { status: 400 });
+      return createApiErrorResponse("Email and password are required", {
+        status: 400,
+      });
     }
 
     // Wrap the login operation for potential retries on transient errors
@@ -34,7 +40,9 @@ export async function POST(request: Request) {
         });
 
         if (!loginResponse.ok) {
-          const errorData = await loginResponse.json().catch(() => ({ message: "Login failed" }));
+          const errorData = await loginResponse
+            .json()
+            .catch(() => ({ message: "Login failed" }));
           const error = new Error(errorData.message || "Login failed");
           (error as any).status = loginResponse.status;
           (error as any).originalData = errorData;
@@ -62,13 +70,15 @@ export async function POST(request: Request) {
           status: normalized.originalStatus || 500,
           fallbackMessage: normalized.message,
           route: "POST /api/auth/session",
-        }
+        },
       );
     }
 
     const token = loginData.access_token;
     if (!token) {
-      return createApiErrorResponse("No token in login response", { status: 500 });
+      return createApiErrorResponse("No token in login response", {
+        status: 500,
+      });
     }
 
     // Set secure HTTP-only cookie
@@ -130,7 +140,7 @@ export async function GET() {
         const error = new Error(
           response.status === 401
             ? "Session expired"
-            : `Session check failed: ${response.status}`
+            : `Session check failed: ${response.status}`,
         );
         (error as any).status = response.status;
         throw error;
@@ -163,7 +173,7 @@ export async function GET() {
         status: normalized.originalStatus || 500,
         fallbackMessage: normalized.message,
         route: "GET /api/auth/session",
-      }
+      },
     );
   }
 }

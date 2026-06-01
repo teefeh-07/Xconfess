@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { Notification } from './entities/notification.entity';
 import { NotificationPreference } from './entities/notification-preference.entity';
 import { NotificationService } from './services/notification.service';
@@ -52,6 +53,14 @@ import { EmailModule } from '../email/email.module';
       },
     }),
     ConfigModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get('JWT_SECRET'),
+        signOptions: { expiresIn: '1d' },
+      }),
+    }),
     AuditLogModule,
     LoggerModule,
     EmailModule,
@@ -67,6 +76,6 @@ import { EmailModule } from '../email/email.module';
     RecipientResolver,
     JobManagementService,
   ],
-  exports: [NotificationService, RecipientResolver],
+  exports: [NotificationService, RecipientResolver, JobManagementService],
 })
 export class NotificationsModule {}

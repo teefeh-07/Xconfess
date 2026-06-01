@@ -21,9 +21,9 @@ pub mod codes {
 /// Error classification for backend retry strategy
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ErrorClassification {
-    Terminal,   // Invalid input, auth failure — do not retry
-    Retryable,  // Transient (pause, rate limit) — may retry with backoff
-    Unknown,    // Treat as terminal, log for investigation
+    Terminal,  // Invalid input, auth failure — do not retry
+    Retryable, // Transient (pause, rate limit) — may retry with backoff
+    Unknown,   // Treat as terminal, log for investigation
 }
 
 const EVENT_VERSION_V1: u32 = 1;
@@ -400,12 +400,10 @@ impl AnonymousTipping {
         }
 
         // v1 → v2: initialise GlobalTipCount to 0 if not already present.
-        if current_version < 2 {
-            if !env.storage().instance().has(&DataKey::GlobalTipCount) {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::GlobalTipCount, &0_u64);
-            }
+        if current_version < 2 && !env.storage().instance().has(&DataKey::GlobalTipCount) {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalTipCount, &0_u64);
         }
 
         env.storage()

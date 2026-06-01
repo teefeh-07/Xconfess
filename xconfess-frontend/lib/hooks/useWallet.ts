@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import * as WalletService from "../services/wallet.service";
 import { computeWalletReadiness } from "../wallet/walletReadiness";
 
@@ -157,7 +157,6 @@ export const useWallet = (): UseWalletReturn => {
    * Revalidate wallet connection on route changes
    */
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (hasInitialized.current && state.publicKey) {
@@ -184,7 +183,7 @@ export const useWallet = (): UseWalletReturn => {
       };
       revalidateConnection();
     }
-  }, [pathname, searchParams, state.publicKey, clearSession, storeSession]);
+  }, [pathname, state.publicKey, clearSession, storeSession]);
 
   /**
    * Connect to wallet

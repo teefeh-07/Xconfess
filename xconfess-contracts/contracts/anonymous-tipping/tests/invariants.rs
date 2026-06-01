@@ -248,11 +248,7 @@ fn rate_limit_blocks_at_exact_window_cap() {
     let wallet = Address::generate(&env);
     for i in 0..cap {
         let result = client.try_send_tip(&wallet, &1i128);
-        assert!(
-            result.is_ok(),
-            "I6: tip {} (of {cap}) must succeed",
-            i + 1
-        );
+        assert!(result.is_ok(), "I6: tip {} (of {cap}) must succeed", i + 1);
     }
 
     // The very next tip must be rate-limited
@@ -346,7 +342,10 @@ fn unpause_restores_settlement_invariant() {
     client.unpause(&owner, &SorobanString::from_str(&env, "resolved"));
 
     let id = client.send_tip(&recipient, &42i128);
-    assert_eq!(id, 1, "I7: first tip after unpause must get settlement_id 1");
+    assert_eq!(
+        id, 1,
+        "I7: first tip after unpause must get settlement_id 1"
+    );
     assert_eq!(client.get_tips(&recipient), 42i128);
 }
 
@@ -416,7 +415,11 @@ fn overflow_by_one_is_caught() {
     client.send_tip(&recipient, &i128::MAX);
 
     let result = client.try_send_tip(&recipient, &1i128);
-    assert_eq!(result, Err(Ok(Error::TotalOverflow)), "I9: +1 overflow caught");
+    assert_eq!(
+        result,
+        Err(Ok(Error::TotalOverflow)),
+        "I9: +1 overflow caught"
+    );
 }
 
 // ── I10: Recipient isolation ──────────────────────────────────────────────────
@@ -556,18 +559,12 @@ fn metadata_length_boundary_exact() {
     let max = anonymous_tipping::AnonymousTipping::MAX_PROOF_METADATA_LEN as usize;
 
     // Exactly at the boundary — must succeed
-    let ok_meta = SorobanString::from_str(
-        &env,
-        &std::string::String::from("x").repeat(max),
-    );
+    let ok_meta = SorobanString::from_str(&env, &std::string::String::from("x").repeat(max));
     let sid = client.send_tip_with_proof(&recipient, &1i128, &Some(ok_meta));
     assert_eq!(sid, 1);
 
     // One over the boundary — must fail
-    let over_meta = SorobanString::from_str(
-        &env,
-        &std::string::String::from("x").repeat(max + 1),
-    );
+    let over_meta = SorobanString::from_str(&env, &std::string::String::from("x").repeat(max + 1));
     let result = client.try_send_tip_with_proof(&recipient, &1i128, &Some(over_meta));
     assert_eq!(result, Err(Ok(Error::MetadataTooLong)));
 

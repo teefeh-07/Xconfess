@@ -88,10 +88,10 @@ export class AuditLog {
   })
   action: AuditActionType;
 
-  @Column({ name: 'entity_type', nullable: true })
+  @Column({ name: 'entity_type', type: 'varchar', nullable: true })
   entityType: string | null;
 
-  @Column({ name: 'entity_id', nullable: true })
+  @Column({ name: 'entity_id', type: 'varchar', nullable: true })
   entityId: string | null;
 
   @Column({ type: 'jsonb', nullable: true, default: {} })

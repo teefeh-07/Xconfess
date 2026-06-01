@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog, AuditActionType } from './audit-log.entity';
+import { AuditLogRedactionService } from './audit-log-redaction.service';
 
 export interface AuditLogContext {
   userId?: string | number | null;
@@ -76,6 +77,7 @@ export class AuditLogService {
   constructor(
     @InjectRepository(AuditLog)
     private readonly auditLogRepository: Repository<AuditLog>,
+    private readonly redaction: AuditLogRedactionService,
   ) {}
 
   private toNullableUserId(value?: string | number | null): number | null {
@@ -139,6 +141,38 @@ export class AuditLogService {
         dto.metadata,
         'templateVersion',
       );
+
+      const rawMetadata = {
+        ...(dto.metadata || {}),
+        ...(actor
+          ? {
+              actorType: actor.type,
+              actorId: actor.id,
+              actorUserId: actor.userId || null,
+              ...(actor.label ? { actorLabel: actor.label } : {}),
+              ...(actor.source ? { actorSource: actor.source } : {}),
+            }
+          : {}),
+        ...(dto.context?.requestId
+          ? { requestId: dto.context.requestId }
+          : {}),
+        ...(templateKey && templateVersion
+          ? {
+              templateKey,
+              templateVersion,
+            }
+          : {}),
+      };
+
+      let safeMetadata: Record<string, unknown> | null = rawMetadata;
+      try {
+        safeMetadata = this.redaction.redactMetadata(rawMetadata);
+      } catch (redactionError: unknown) {
+        this.logger.warn(
+          `Audit metadata redaction failed, falling back to raw metadata: ${redactionError instanceof Error ? redactionError.message : 'unknown error'}`,
+        );
+      }
+
       const auditLog = this.auditLogRepository.create({
         adminId: this.toNullableUserId(dto.context?.userId || null),
         action: dto.actionType,
@@ -147,27 +181,7 @@ export class AuditLogService {
             ? dto.metadata.entityType
             : null,
         entityId: this.extractEntityId(dto.metadata),
-        metadata: {
-          ...(dto.metadata || {}),
-          ...(actor
-            ? {
-                actorType: actor.type,
-                actorId: actor.id,
-                actorUserId: actor.userId || null,
-                ...(actor.label ? { actorLabel: actor.label } : {}),
-                ...(actor.source ? { actorSource: actor.source } : {}),
-              }
-            : {}),
-          ...(dto.context?.requestId
-            ? { requestId: dto.context.requestId }
-            : {}),
-          ...(templateKey && templateVersion
-            ? {
-                templateKey,
-                templateVersion,
-              }
-            : {}),
-        },
+        metadata: safeMetadata,
         notes: null,
         ipAddress: dto.context?.ipAddress || null,
         userAgent: dto.context?.userAgent || null,

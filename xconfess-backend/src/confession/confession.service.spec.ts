@@ -26,9 +26,12 @@ describe('ConfessionService', () => {
 
   beforeEach(async () => {
     qb = {
+      where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       getCount: jest.fn(),
       skip: jest.fn().mockReturnThis(),
@@ -79,8 +82,23 @@ describe('ConfessionService', () => {
           provide: EncryptionService,
           useValue: { encrypt: jest.fn(), decrypt: jest.fn() },
         },
-        { provide: StellarService, useValue: { anchorConfession: jest.fn() } },
-        { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn() } },
+        {
+          provide: StellarService,
+          useValue: {
+            anchorConfession: jest.fn(),
+            processAnchorData: jest.fn(),
+            getExplorerUrl: jest.fn(),
+          },
+        },
+        {
+          provide: CacheService,
+          useValue: {
+            buildKey: jest.fn((...parts: string[]) => parts.join(':')),
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn(),
+            delPattern: jest.fn(),
+          },
+        },
         { provide: TagService, useValue: { validateTags: jest.fn() } },
       ],
     }).compile();
@@ -92,9 +110,13 @@ describe('ConfessionService', () => {
   it('remove() soft‑deletes existing', async () => {
     repo.findOne.mockResolvedValue({ id: '1', isDeleted: false } as any);
     await expect(service.remove('1')).resolves.toEqual({
-      message: 'Confession soft‑deleted',
+      message: 'Confession soft-deleted',
+      id: '1',
     });
-    expect(repo.update).toHaveBeenCalledWith('1', { isDeleted: true });
+    expect(repo.update).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ isDeleted: true, deletedAt: expect.any(Date) }),
+    );
   });
 
   it('remove() throws if not found', async () => {
@@ -103,7 +125,13 @@ describe('ConfessionService', () => {
   });
 
   it('getConfessions paginates and filters', async () => {
-    qb.getMany.mockResolvedValue([{ id: 'a' }]);
+    qb.getMany.mockResolvedValue([
+      {
+        id: 'a',
+        message: encryptConfession('hello', '12345678901234567890123456789012'),
+        created_at: new Date('2026-03-25T00:00:00.000Z'),
+      },
+    ]);
 
     const res = await service.getConfessions({
       page: 2,
@@ -174,7 +202,15 @@ describe('ConfessionService — anchor pending-state guard (#776)', () => {
         { provide: AppLogger, useValue: { log: jest.fn(), error: jest.fn() } },
         { provide: EncryptionService, useValue: { encrypt: jest.fn(), decrypt: jest.fn() } },
         { provide: StellarService, useValue: stellarService },
-        { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn() } },
+        {
+          provide: CacheService,
+          useValue: {
+            buildKey: jest.fn((...parts: string[]) => parts.join(':')),
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn(),
+            delPattern: jest.fn(),
+          },
+        },
         { provide: TagService, useValue: { validateTags: jest.fn() } },
       ],
     }).compile();

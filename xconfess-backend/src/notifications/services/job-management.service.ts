@@ -21,7 +21,7 @@ export interface DlqJobFilter {
   jobIds?: string[];
 }
 
-interface DlqReplayOutcome {
+export interface DlqReplayOutcome {
   jobId: string;
   originalJobId: string | null;
   replayJobId: string;
@@ -31,11 +31,15 @@ interface DlqReplayOutcome {
   error?: string;
 }
 
-interface DlqCleanupOutcome {
+export interface DlqCleanupOutcome {
   jobId: string;
   originalJobId: string | null;
   outcome: 'removed' | 'failed';
   error?: string;
+}
+
+function toAuditRecord(value: object): Record<string, unknown> {
+  return value as Record<string, unknown>;
 }
 
 @Injectable()
@@ -111,7 +115,7 @@ export class JobManagementService {
       jobId: String(job.id),
       targetJobIds: [String(job.id)],
       targetJobs: [this.toAuditTarget(job)],
-      outcomes: [outcome],
+      outcomes: [toAuditRecord(outcome)],
       summary,
       reason: reason || null,
       replayedAt: new Date().toISOString(),
@@ -150,7 +154,7 @@ export class JobManagementService {
       filters: filter,
       targetJobIds: jobs.map((job) => String(job.id)),
       targetJobs: jobs.map((job) => this.toAuditTarget(job)),
-      outcomes,
+      outcomes: outcomes.map(toAuditRecord),
       summary,
       replayedAt: new Date().toISOString(),
     }, context);
@@ -199,7 +203,7 @@ export class JobManagementService {
         filters: result.filters,
         targetJobIds: result.targetJobIds,
         targetJobs: result.targetJobs,
-        outcomes: result.outcomes,
+        outcomes: result.outcomes.map(toAuditRecord),
         summary: result.summary,
         retentionDays: result.retentionDays,
         batchSize: result.batchSize,
@@ -472,10 +476,15 @@ export class JobManagementService {
       return;
     }
 
+    const existingMeta = job.data._meta;
+
     await job.updateData({
       ...job.data,
       _meta: {
-        ...job.data._meta,
+        originalJobId: existingMeta?.originalJobId,
+        failedAt: existingMeta?.failedAt ?? new Date().toISOString(),
+        attemptsMade: existingMeta?.attemptsMade ?? 0,
+        lastError: existingMeta?.lastError ?? '',
         replayJobId,
         replayOutcome,
         replayedAt: new Date().toISOString(),
@@ -536,7 +545,10 @@ export class JobManagementService {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
     const jobs = (await this.getFilteredDlqJobs()).filter((job) => {
       const failedAt = job.data._meta?.failedAt;
-      return Boolean(failedAt) && new Date(failedAt) <= cutoff;
+      if (!failedAt) {
+        return false;
+      }
+      return new Date(failedAt) <= cutoff;
     });
     const selectedJobs = jobs.slice(0, batchSize);
     const outcomes: DlqCleanupOutcome[] = [];

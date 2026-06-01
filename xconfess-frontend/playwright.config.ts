@@ -9,6 +9,11 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'smoke',
+      testMatch: /public-pages-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'mobile-portrait',
       use: { ...devices['iPhone SE'] },
     },

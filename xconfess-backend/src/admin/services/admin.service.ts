@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
-import { Report, ReportStatus, ReportType } from '../entities/report.entity';
+import { Report, ReportStatus, ReportType } from '../entities/report.entity'
 import { AnonymousConfession } from '../../confession/entities/confession.entity';
 import { User, UserRole } from '../../user/entities/user.entity';
 import { ModerationService } from './moderation.service';

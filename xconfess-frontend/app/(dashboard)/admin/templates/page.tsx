@@ -147,7 +147,7 @@ export default function AdminTemplatesPage() {
                   <Th>Version State</Th>
                   <Th>Traffic Weight</Th>
                   <Th>Integrity</Th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-zinc-500 uppercase tracking-widest">
+                  <th className="px-6 py-4 text-right text-xs font-bold text-zinc-500 uppercase tracking-widest sticky right-0 bg-zinc-900/50 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-zinc-800">
                     Emergency
                   </th>
                 </tr>
@@ -200,7 +200,7 @@ export default function AdminTemplatesPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-6 text-right space-x-1">
+                    <td className="px-6 py-6 text-right space-x-1 sticky right-0 bg-zinc-950 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-zinc-800">
                       <button
                         onClick={() =>
                           openConfirmation({

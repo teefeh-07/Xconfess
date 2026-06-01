@@ -24,6 +24,7 @@ const VALID_SOURCE_ACCOUNT =
 /** Minimal stub for a successful Soroban submit result. */
 const MOCK_SUBMIT_RESULT = {
   hash: 'abc123def456',
+  success: true,
   successful: true,
   result_xdr: null,
 };

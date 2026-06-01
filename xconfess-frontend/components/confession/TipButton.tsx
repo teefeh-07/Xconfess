@@ -7,6 +7,7 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import { useStellarWallet } from "@/lib/hooks/useStellarWallet";
+import { Button } from "@/components/ui/button";
 
 interface AnchorButtonProps {
   confessionId: string;
@@ -54,14 +55,15 @@ export function AnchorButton({
   // Not yet connected
   if (!wallet.isConnected) {
     return (
-      <button
+      <Button
         type="button"
         onClick={wallet.connect}
         disabled={wallet.isLoading}
+        aria-label="Connect wallet to anchor"
         className="anchor-btn anchor-btn--connect"
       >
         {wallet.isLoading ? "Connecting…" : "Connect Wallet to Anchor"}
-      </button>
+      </Button>
     );
   }
 
@@ -73,32 +75,29 @@ export function AnchorButton({
           {wallet.readinessError ??
             "Wallet is not ready. Please check your network in Freighter."}
         </p>
-        <button
-          type="button"
-          className="anchor-btn anchor-btn--disabled"
-          disabled
-        >
+        <Button type="button" className="anchor-btn anchor-btn--disabled" disabled aria-label="Anchor confession disabled">
           Anchor Confession
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="anchor-action">
-      <button
+      <Button
         type="button"
         onClick={handleAnchor}
         // Issue #198 – disabled while in-flight
         disabled={submitState === "pending" || submitState === "success"}
         className={`anchor-btn anchor-btn--${submitState}`}
+        aria-label="Anchor confession"
         aria-busy={submitState === "pending"}
       >
         {submitState === "pending" && "Anchoring…"}
         {submitState === "success" && "Anchored ✓"}
         {(submitState === "idle" || submitState === "error") &&
           "Anchor Confession"}
-      </button>
+      </Button>
       {submitState === "error" && errorMsg && (
         <p className="anchor-action__error" role="alert">
           {errorMsg}

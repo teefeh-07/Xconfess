@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { EmailService } from '../email/email.service';
 import { CryptoUtil } from '../common/crypto.util';
+import { ConfigService } from '@nestjs/config';
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn(),
@@ -40,10 +41,18 @@ describe('UserService', () => {
       dataProcessingConsent: true,
     },
     isNotificationEnabled: jest.fn(),
-    isDiscoverable: jest.fn().mockReturnValue(true),
-    canReceiveReplies: jest.fn().mockReturnValue(true),
-    shouldShowReactions: jest.fn().mockReturnValue(true),
-    hasDataProcessingConsent: jest.fn().mockReturnValue(true),
+    isDiscoverable: jest.fn(function (this: User) {
+      return this.privacySettings?.isDiscoverable !== false;
+    }),
+    canReceiveReplies: jest.fn(function (this: User) {
+      return this.privacySettings?.canReceiveReplies !== false;
+    }),
+    shouldShowReactions: jest.fn(function (this: User) {
+      return this.privacySettings?.showReactions !== false;
+    }),
+    hasDataProcessingConsent: jest.fn(function (this: User) {
+      return this.privacySettings?.dataProcessingConsent !== false;
+    }),
     getEmail: jest.fn(),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -71,6 +80,10 @@ describe('UserService', () => {
         {
           provide: EmailService,
           useValue: mockEmailService,
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((_key: string, fallback?: unknown) => fallback ?? '') },
         },
       ],
     }).compile();

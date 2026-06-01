@@ -299,7 +299,7 @@ function FailedJobsList() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Failed At
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky right-0 bg-gray-50 dark:bg-gray-700 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-gray-200 dark:after:bg-gray-600">
                     Actions
                   </th>
                 </tr>
@@ -342,7 +342,7 @@ function FailedJobsList() {
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {job.failedAt ? formatDate(job.failedAt) : 'N/A'}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white dark:bg-gray-800 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-gray-200 dark:after:bg-gray-700">
                         <button
                           onClick={() => handleReplayClick(job.id)}
                           disabled={isReplaying}

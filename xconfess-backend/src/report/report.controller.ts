@@ -5,7 +5,6 @@ import {
   Patch,
   Param,
   Body,
-  ParseIntPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,9 +13,11 @@ import {
   ApiParam,
   ApiResponse,
 } from '@nestjs/swagger';
-import { ReportService } from './report.service';
-import { CreateReportDto } from './entities/dto/create-report.dto';
-import { UpdateReportDto } from './entities/dto/update-report.dto';
+import {
+  LegacyCreateReportDto,
+  LegacyUpdateReportDto,
+  ReportService,
+} from './report.service';
 
 @ApiTags('Reports')
 @Controller('reports')
@@ -25,7 +26,17 @@ export class ReportController {
 
   @Post()
   @ApiOperation({ summary: 'Submit a report for a confession' })
-  @ApiBody({ type: CreateReportDto })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['confessionId', 'type'],
+      properties: {
+        confessionId: { type: 'string' },
+        type: { type: 'string' },
+        reason: { type: 'string' },
+      },
+    },
+  })
   @ApiResponse({
     status: 201,
     description: 'Report submitted.',
@@ -41,7 +52,7 @@ export class ReportController {
     },
   })
   @ApiResponse({ status: 400, description: 'Validation error.' })
-  create(@Body() dto: CreateReportDto) {
+  create(@Body() dto: LegacyCreateReportDto) {
     return this.reportService.create(dto, null);
   }
 
@@ -84,7 +95,7 @@ export class ReportController {
     },
   })
   @ApiResponse({ status: 404, description: 'Report not found.' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id') id: string) {
     return this.reportService.findOne(id);
   }
 
@@ -98,7 +109,7 @@ export class ReportController {
       example: { id: 'b1a2c3d4-...', status: 'approved', updatedAt: '2026-04-25T11:00:00.000Z' },
     },
   })
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateReportDto) {
+  update(@Param('id') id: string, @Body() dto: LegacyUpdateReportDto) {
     return this.reportService.updateStatus(id, dto);
   }
 
@@ -112,7 +123,7 @@ export class ReportController {
       example: { id: 'b1a2c3d4-...', status: 'resolved', resolvedAt: '2026-04-25T11:30:00.000Z' },
     },
   })
-  resolve(@Param('id', ParseIntPipe) id: number) {
+  resolve(@Param('id') id: string) {
     return this.reportService.resolve(id);
   }
 
@@ -126,7 +137,7 @@ export class ReportController {
       example: { id: 'b1a2c3d4-...', status: 'rejected', updatedAt: '2026-04-25T11:45:00.000Z' },
     },
   })
-  dismiss(@Param('id', ParseIntPipe) id: number) {
+  dismiss(@Param('id') id: string) {
     return this.reportService.dismiss(id);
   }
 }

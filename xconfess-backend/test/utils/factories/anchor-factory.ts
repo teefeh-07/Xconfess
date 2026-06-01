@@ -1,4 +1,4 @@
-import { faker } from '@faker-js/faker/.';
+import { faker } from '@faker-js/faker';
 import { AnonymousConfession } from '../../../src/confession/entities/confession.entity';
 import { Gender } from '../../../src/confession/dto/get-confessions.dto';
 
@@ -116,8 +116,8 @@ export class AnchorFactory {
       () => this.buildFailedAnchor(),
     ];
 
-    return Array.from({ length: count }, () => {
-      const stateBuilder = faker.helpers.arrayElement(states);
+    return Array.from({ length: count }, (_, index) => {
+      const stateBuilder = states[index % states.length];
       return stateBuilder();
     });
   }

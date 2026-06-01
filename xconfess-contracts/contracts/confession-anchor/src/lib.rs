@@ -231,11 +231,7 @@ impl ConfessionAnchor {
         // Track last anchor timestamp when v2 schema is active.
         // We only write when the key already exists so we don't spuriously
         // create it before the owner has run `migrate()`.
-        if env
-            .storage()
-            .instance()
-            .has(&DataKey::LastAnchorTimestamp)
-        {
+        if env.storage().instance().has(&DataKey::LastAnchorTimestamp) {
             env.storage()
                 .instance()
                 .set(&DataKey::LastAnchorTimestamp, &timestamp);
@@ -479,16 +475,10 @@ impl ConfessionAnchor {
         }
 
         // v1 → v2: initialise LastAnchorTimestamp to 0 if not already present.
-        if current_version < 2 {
-            if !env
-                .storage()
+        if current_version < 2 && !env.storage().instance().has(&DataKey::LastAnchorTimestamp) {
+            env.storage()
                 .instance()
-                .has(&DataKey::LastAnchorTimestamp)
-            {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::LastAnchorTimestamp, &0_u64);
-            }
+                .set(&DataKey::LastAnchorTimestamp, &0_u64);
         }
 
         env.storage()
@@ -1321,6 +1311,6 @@ mod test {
 
         client.initialize(&owner);
 
-        let _ = client.pause(&owner, &reason);
+        client.pause(&owner, &reason);
     }
 }

@@ -113,6 +113,10 @@ export function normalizeAuthError(error: any): NormalizedAuthError {
   };
 }
 
+export function getAuthErrorMessage(error: NormalizedAuthError): string {
+  return error.message;
+}
+
 /**
  * Extract HTTP status code from various error types.
  */

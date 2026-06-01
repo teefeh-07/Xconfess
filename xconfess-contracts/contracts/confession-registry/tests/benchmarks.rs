@@ -1,12 +1,12 @@
-use soroban_sdk::{Address, Env, BytesN, testutils::Address as _};
 use confession_registry::{ConfessionRegistry, ConfessionRegistryClient, ConfessionStatus};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 fn setup(env: &Env) -> (ConfessionRegistryClient<'static>, Address, Address) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, ConfessionRegistry);
-    let client = ConfessionRegistryClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let author = Address::generate(&env);
+    let contract_id = env.register(ConfessionRegistry, ());
+    let client = ConfessionRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let author = Address::generate(env);
     client.initialize(&admin);
     (client, admin, author)
 }
@@ -20,10 +20,10 @@ fn benchmark_create_confession() {
 
     env.cost_estimate().budget().reset_default();
     client.create_confession(&author, &hash, &ts);
-    
+
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
-    
+
     println!("GAS_METRIC:create_confession:cpu:{}", cpu);
     println!("GAS_METRIC:create_confession:mem:{}", mem);
 }
@@ -38,10 +38,10 @@ fn benchmark_update_status() {
 
     env.cost_estimate().budget().reset_default();
     client.update_status(&author, &id, &ConfessionStatus::Flagged, &2_000);
-    
+
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
-    
+
     println!("GAS_METRIC:update_status:cpu:{}", cpu);
     println!("GAS_METRIC:update_status:mem:{}", mem);
 }

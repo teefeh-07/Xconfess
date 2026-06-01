@@ -193,7 +193,7 @@ export async function getTipStats(confessionId: string): Promise<TipStats | null
 
 // -------------------- Backend Integration --------------------
 
-export async function verifyTip(
+export async function verifySignedTip(
   params: VerifyTipParams,
 ): Promise<TipVerificationResult> {
   const response = await fetch("/api/tips/verify", {

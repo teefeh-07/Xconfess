@@ -26,6 +26,7 @@ pub fn get_admin(env: &Env) -> Address {
 /// contract (owner OR admin) so emergency pause cannot be stranded behind a
 /// separate, drift-prone "pause admin" key.
 pub fn require_pause_authority(env: &Env, caller: &Address) -> Result<Address, PauseError> {
-    crate::access_control::require_admin_or_owner(env, caller).map_err(|_| PauseError::Unauthorized)?;
+    crate::access_control::require_admin_or_owner(env, caller)
+        .map_err(|_| PauseError::Unauthorized)?;
     Ok(caller.clone())
 }

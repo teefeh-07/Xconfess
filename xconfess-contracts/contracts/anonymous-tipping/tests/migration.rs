@@ -11,7 +11,9 @@
 
 extern crate std;
 
-use anonymous_tipping::{AnonymousTipping, AnonymousTippingClient, SCHEMA_VERSION_CURRENT, SCHEMA_VERSION_INITIAL};
+use anonymous_tipping::{
+    AnonymousTipping, AnonymousTippingClient, SCHEMA_VERSION_CURRENT, SCHEMA_VERSION_INITIAL,
+};
 use soroban_sdk::{testutils::Address as _, Address, Env, String as SorobanString};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -62,8 +64,7 @@ fn migrate_bumps_schema_version_to_current() {
 
     let new_version = client.migrate(&owner);
     assert_eq!(
-        new_version,
-        SCHEMA_VERSION_CURRENT,
+        new_version, SCHEMA_VERSION_CURRENT,
         "migrate() must return SCHEMA_VERSION_CURRENT after upgrade"
     );
     assert_eq!(
@@ -232,14 +233,20 @@ fn migration_preserves_pause_state() {
 
 #[test]
 fn migration_preserves_rate_limit_config() {
-    let (env, _id, owner, client) = owner_setup();
+    let (_env, _id, owner, client) = owner_setup();
     // Custom rate-limit (overrides the default set by configure_controls)
     client.configure_controls(&owner, &25u32, &300u64);
     client.migrate(&owner);
 
     let cfg = client.get_rate_limit_config();
-    assert_eq!(cfg.max_tips_per_window, 25, "max_tips_per_window must survive migration");
-    assert_eq!(cfg.window_seconds, 300, "window_seconds must survive migration");
+    assert_eq!(
+        cfg.max_tips_per_window, 25,
+        "max_tips_per_window must survive migration"
+    );
+    assert_eq!(
+        cfg.window_seconds, 300,
+        "window_seconds must survive migration"
+    );
 }
 
 // ── idempotency ───────────────────────────────────────────────────────────────
@@ -319,6 +326,9 @@ fn v2_migration_does_not_modify_or_remove_v1_keys() {
     assert_eq!(client.latest_settlement_nonce(), pre_nonce);
     assert_eq!(client.get_tips(&alice), pre_total);
     let post_cfg = client.get_rate_limit_config();
-    assert_eq!(post_cfg.max_tips_per_window, pre_rate_cfg.max_tips_per_window);
+    assert_eq!(
+        post_cfg.max_tips_per_window,
+        pre_rate_cfg.max_tips_per_window
+    );
     assert_eq!(post_cfg.window_seconds, pre_rate_cfg.window_seconds);
 }

@@ -15,6 +15,29 @@ interface QueueDetail {
   error?: string;
 }
 
+/**
+ * Resolves a human-readable reason for why background jobs are disabled
+ * based on the raw config value of ENABLE_BACKGROUND_JOBS.
+ *
+ * Distinguishes three cases so operators can tell at a glance whether the
+ * disabled state is intentional or a misconfiguration:
+ *
+ * - `"false"` → intentionally disabled (e.g. local development)
+ * - `undefined` → not set at all (defaults to disabled)
+ * - any other value → misconfiguration (expected `"true"`)
+ */
+function resolveDisabledReason(rawValue: unknown): string {
+  if (rawValue === 'false') {
+    return 'ENABLE_BACKGROUND_JOBS is set to "false" (background jobs intentionally disabled)';
+  }
+
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return 'ENABLE_BACKGROUND_JOBS is not set (defaults to disabled)';
+  }
+
+  return `ENABLE_BACKGROUND_JOBS is set to "${String(rawValue)}" (expected "true" to enable)`;
+}
+
 @Injectable()
 export class QueueHealthIndicator extends HealthIndicator {
   private readonly logger = new Logger(QueueHealthIndicator.name);
@@ -31,13 +54,16 @@ export class QueueHealthIndicator extends HealthIndicator {
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    const jobsEnabled =
-      this.configService.get<string>('ENABLE_BACKGROUND_JOBS') === 'true';
+    const rawConfig = this.configService.get<string | undefined>(
+      'ENABLE_BACKGROUND_JOBS',
+    );
+    const jobsEnabled = rawConfig === 'true';
 
     if (!jobsEnabled) {
       return this.getStatus(key, true, {
         mode: 'disabled',
-        reason: 'ENABLE_BACKGROUND_JOBS is not set',
+        reason: resolveDisabledReason(rawConfig),
+        severity: 'info',
       });
     }
 
@@ -51,7 +77,6 @@ export class QueueHealthIndicator extends HealthIndicator {
         queue: this.notifications,
         requiresWorkers: true,
       },
-      // DLQ is a retention queue — no processor is expected to run against it
       {
         name: 'notifications-dlq',
         queue: this.dlq,

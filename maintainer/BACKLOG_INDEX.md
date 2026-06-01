@@ -1,6 +1,7 @@
 # Maintainer Backlog Index
 
 > **Triaging a new Wave issue?** See [`WAVE_TRIAGE.md`](./WAVE_TRIAGE.md) for the full labeling, scoping, and ready-for-contributors process.
+> **Assigning Wave 5 contributors?** See [`WAVE_5_CONTRIBUTOR_ASSIGNMENT.md`](./WAVE_5_CONTRIBUTOR_ASSIGNMENT.md) for the assignment and communication process.
 
 This index is a quick routing reference for follow-up work. It is intentionally lightweight: refer to the linked issues for the authoritative scope, acceptance criteria, and implementation details.
 

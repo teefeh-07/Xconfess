@@ -10,6 +10,21 @@ import {
   Gender,
 } from './dto/get-confessions.dto';
 import { ModerationStatus } from '../moderation/ai-moderation.service';
+import { ConfessionViewCacheService } from './confession-view-cache.service';
+import { AiModerationService } from '../moderation/ai-moderation.service';
+import { ModerationRepositoryService } from '../moderation/moderation-repository.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AnonymousUserService } from '../user/anonymous-user.service';
+import { AppLogger } from '../logger/logger.service';
+import { EncryptionService } from '../encryption/encryption.service';
+import { StellarService } from '../stellar/stellar.service';
+import { CacheService } from '../cache/cache.service';
+import { TagService } from './tag.service';
+
+jest.mock('../utils/confession-encryption', () => ({
+  decryptConfession: jest.fn((value: string) => value),
+  encryptConfession: jest.fn((value: string) => value),
+}));
 
 /**
  * Gas Regression Tests for Confession Pagination and Read Flows
@@ -46,6 +61,7 @@ describe('ConfessionService Gas Regression Tests', () => {
       createQueryBuilder: jest.fn(),
       update: jest.fn(),
       find: jest.fn(),
+      hybridSearch: jest.fn().mockResolvedValue({ confessions: [], total: 0 }),
     } as any;
 
     configService = {
@@ -56,6 +72,64 @@ describe('ConfessionService Gas Regression Tests', () => {
       providers: [
         ConfessionService,
         { provide: AnonymousConfessionRepository, useValue: repo },
+        {
+          provide: ConfessionViewCacheService,
+          useValue: { checkAndMarkView: jest.fn().mockResolvedValue(false) },
+        },
+        {
+          provide: AiModerationService,
+          useValue: { moderateContent: jest.fn() },
+        },
+        {
+          provide: ModerationRepositoryService,
+          useValue: {
+            createLog: jest.fn(),
+            getLogsByConfession: jest.fn(),
+            updateReview: jest.fn(),
+          },
+        },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        {
+          provide: AnonymousUserService,
+          useValue: { create: jest.fn(), getAnonIdsForUser: jest.fn() },
+        },
+        {
+          provide: AppLogger,
+          useValue: {
+            log: jest.fn(),
+            error: jest.fn(),
+            observeTimer: jest.fn(),
+            logSlowSearch: jest.fn(),
+            logSampledSearch: jest.fn(),
+            logWithUser: jest.fn(),
+          },
+        },
+        { provide: EncryptionService, useValue: {} },
+        {
+          provide: StellarService,
+          useValue: {
+            processAnchorData: jest.fn(),
+            getExplorerUrl: jest.fn(),
+            verifyTransaction: jest.fn(),
+          },
+        },
+        {
+          provide: CacheService,
+          useValue: {
+            buildKey: jest.fn((...parts: string[]) => parts.join(':')),
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn(),
+            delPattern: jest.fn(),
+          },
+        },
+        {
+          provide: TagService,
+          useValue: {
+            validateTags: jest.fn(),
+            getTagByName: jest.fn(),
+            getAllTags: jest.fn(),
+          },
+        },
         { provide: ConfigService, useValue: configService },
       ],
     }).compile();
@@ -68,11 +142,13 @@ describe('ConfessionService Gas Regression Tests', () => {
       it('should maintain gas baseline for basic pagination', async () => {
         // Arrange
         const mockQueryBuilder = {
+          where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           leftJoinAndSelect: jest.fn().mockReturnThis(),
-          orderBy: jest.fn().mockReturnThis(),
-          addSelect: jest.fn().mockReturnThis(),
           select: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
           getCount: jest.fn().mockResolvedValue(100),
           skip: jest.fn().mockReturnThis(),
           take: jest.fn().mockReturnThis(),
@@ -97,10 +173,10 @@ describe('ConfessionService Gas Regression Tests', () => {
         expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
           'confession.isHidden = false',
         );
-        expect(mockQueryBuilder.leftJoinAndSelect).toHaveBeenCalledTimes(3); // user, reactions, links
-        expect(mockQueryBuilder.getCount).toHaveBeenCalled();
-        expect(mockQueryBuilder.skip).toHaveBeenCalledWith(0);
-        expect(mockQueryBuilder.take).toHaveBeenCalledWith(10);
+        expect(mockQueryBuilder.leftJoinAndSelect).toHaveBeenCalledTimes(5); // author/link and reaction graph
+        expect(mockQueryBuilder.getCount).not.toHaveBeenCalled();
+        expect(mockQueryBuilder.skip).not.toHaveBeenCalled();
+        expect(mockQueryBuilder.take).toHaveBeenCalledWith(11);
         expect(mockQueryBuilder.getMany).toHaveBeenCalled();
 
         // Gas assertion: Should not exceed baseline
@@ -121,9 +197,12 @@ describe('ConfessionService Gas Regression Tests', () => {
       it('should handle large pagination efficiently', async () => {
         // Arrange
         const mockQueryBuilder = {
+          where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           leftJoinAndSelect: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
           orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
           addSelect: jest.fn().mockReturnThis(),
           getCount: jest.fn().mockResolvedValue(10000),
           skip: jest.fn().mockReturnThis(),
@@ -144,7 +223,7 @@ describe('ConfessionService Gas Regression Tests', () => {
 
         // Assert
         expect(mockQueryBuilder.skip).toHaveBeenCalledWith(9800); // (50-1) * 200
-        expect(mockQueryBuilder.take).toHaveBeenCalledWith(200);
+        expect(mockQueryBuilder.take).toHaveBeenCalledWith(201);
 
         // Gas regression check
         // Large pagination should be more efficient than multiple small queries
@@ -156,9 +235,12 @@ describe('ConfessionService Gas Regression Tests', () => {
       it('should maintain gas baseline for gender filtering', async () => {
         // Arrange
         const mockQueryBuilder = {
+          where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           leftJoinAndSelect: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
           orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
           addSelect: jest.fn().mockReturnThis(),
           getCount: jest.fn().mockResolvedValue(500),
           skip: jest.fn().mockReturnThis(),
@@ -188,8 +270,10 @@ describe('ConfessionService Gas Regression Tests', () => {
       it('should handle trending sort efficiently', async () => {
         // Arrange
         const mockQueryBuilder = {
+          where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           leftJoinAndSelect: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
           orderBy: jest.fn().mockReturnThis(),
           addSelect: jest.fn().mockReturnThis(),
           addOrderBy: jest.fn().mockReturnThis(),
@@ -217,8 +301,12 @@ describe('ConfessionService Gas Regression Tests', () => {
           expect.any(Function),
           'reaction_count',
         );
-        expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
           'reaction_count',
+          'DESC',
+        );
+        expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+          'confession.created_at',
           'DESC',
         );
       });
@@ -245,9 +333,11 @@ describe('ConfessionService Gas Regression Tests', () => {
         } as any);
 
         // Assert
-        expect(repo.findOne).toHaveBeenCalledWith({
-          where: { id: 'test-id', isDeleted: false },
-        });
+        expect(repo.findOne).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'test-id', isDeleted: false, isHidden: false },
+          }),
+        );
 
         // Gas baseline check
         // Simple read should be under baseline
@@ -337,14 +427,23 @@ describe('ConfessionService Gas Regression Tests', () => {
 
       // Simulate typical operations
       const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         getCount: jest.fn().mockResolvedValue(1000),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(Array(100).fill({ id: 'test' })),
+        getMany: jest.fn().mockResolvedValue(
+          Array(100).fill({
+            id: 'test',
+            message: 'test',
+            created_at: new Date('2026-04-29T00:00:00.000Z'),
+          }),
+        ),
       };
 
       repo.createQueryBuilder = jest
@@ -362,7 +461,7 @@ describe('ConfessionService Gas Regression Tests', () => {
       // Performance assertions
       expect(duration).toBeLessThan(1000); // Should complete within 1 second
       expect(mockQueryBuilder.getMany).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getCount).toHaveBeenCalled();
+        expect(mockQueryBuilder.getCount).not.toHaveBeenCalled();
     });
 
     it('should measure memory usage patterns', async () => {
@@ -370,14 +469,18 @@ describe('ConfessionService Gas Regression Tests', () => {
       const largeDataset = Array(1000).fill({
         id: 'test',
         message: 'x'.repeat(100), // Simulate large confessions
+        created_at: new Date('2026-04-29T00:00:00.000Z'),
         reactions: [],
         tags: [],
       });
 
       const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         getCount: jest.fn().mockResolvedValue(1000),
         skip: jest.fn().mockReturnThis(),
@@ -396,8 +499,8 @@ describe('ConfessionService Gas Regression Tests', () => {
       });
 
       // Verify memory-efficient patterns
-      expect(mockQueryBuilder.take).toHaveBeenCalledWith(100);
-      expect(mockQueryBuilder.skip).toHaveBeenCalledWith(0);
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(101);
+      expect(mockQueryBuilder.skip).not.toHaveBeenCalled();
 
       // Large result sets should be streamed or paginated
       // This test ensures we're not loading excessive data into memory
@@ -412,12 +515,20 @@ describe('ConfessionService Gas Regression Tests', () => {
       const mockQueryBuilder1 = {
         andWhere: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         getCount: jest.fn().mockResolvedValue(500),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(Array(50).fill({ id: 'test' })),
+        getMany: jest.fn().mockResolvedValue(
+          Array(50).fill({
+            id: 'test',
+            message: 'test',
+            created_at: new Date('2026-04-29T00:00:00.000Z'),
+          }),
+        ),
       };
 
       repo.createQueryBuilder = jest
@@ -442,7 +553,9 @@ describe('ConfessionService Gas Regression Tests', () => {
       const mockQueryBuilder2 = {
         andWhere: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         getCount: jest.fn().mockResolvedValue(10),
         skip: jest.fn().mockReturnThis(),

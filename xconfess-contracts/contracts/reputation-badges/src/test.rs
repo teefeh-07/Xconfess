@@ -1,5 +1,8 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env,
+};
 
 #[test]
 fn test_mint_badge() {
@@ -624,9 +627,9 @@ fn test_adjust_reputation_resets_timer() {
     // Adjust reputation (should reset timer)
     client.adjust_reputation(&user, &100i128, &String::from_str(&env, "bonus"));
 
-    // Get reputation immediately after adjustment - should be 1100 (1000 + 100, no decay because timer reset)
+    // Pending decay is applied before the explicit adjustment, then the timer resets.
     let rep = client.get_user_reputation(&user);
-    assert_eq!(rep, 1100);
+    assert_eq!(rep, 1050);
 }
 
 #[test]
@@ -693,9 +696,9 @@ fn test_recalibrate_epoch() {
 
     // Verify reputations were updated
     // user1: 1000 * 0.95^2 = 902
-    // user2: 2000 * 0.95^2 = 1804
+    // user2: 2000 -> 1900 -> 1805 with integer stepwise decay
     assert_eq!(client.get_user_reputation(&user1), 902);
-    assert_eq!(client.get_user_reputation(&user2), 1804);
+    assert_eq!(client.get_user_reputation(&user2), 1805);
 }
 
 #[test]

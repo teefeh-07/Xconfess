@@ -113,7 +113,7 @@ describe("Deterministic Session Recovery (#800)", () => {
       expect(screen.queryByText("Session Expired")).not.toBeInTheDocument();
     });
 
-    it("shows loading state while checking auth even if session will be expired", () => {
+    it("shows session expired UI immediately when session is expired, regardless of loading state", () => {
       mockAuthState = {
         ...mockAuthState,
         isAuthenticated: false,
@@ -124,8 +124,8 @@ describe("Deterministic Session Recovery (#800)", () => {
 
       renderGuard();
 
-      expect(screen.getByText("Loading...")).toBeInTheDocument();
-      expect(screen.queryByText("Session Expired")).not.toBeInTheDocument();
+      expect(screen.getByText("Session Expired")).toBeInTheDocument();
+      expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
     });
   });
 

@@ -12,8 +12,8 @@
 extern crate std;
 
 use confession_anchor::{
-    ConfessionAnchor, ConfessionAnchorClient, Error,
-    ANCHOR_SCHEMA_VERSION_CURRENT, ANCHOR_SCHEMA_VERSION_INITIAL,
+    ConfessionAnchor, ConfessionAnchorClient, Error, ANCHOR_SCHEMA_VERSION_CURRENT,
+    ANCHOR_SCHEMA_VERSION_INITIAL,
 };
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
@@ -37,12 +37,7 @@ fn sample_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
 }
 
-fn owner_client(
-    env: &Env,
-) -> (
-    soroban_sdk::Address,
-    ConfessionAnchorClient<'static>,
-) {
+fn owner_client(env: &Env) -> (soroban_sdk::Address, ConfessionAnchorClient<'static>) {
     let client = new_client(env);
     let owner = soroban_sdk::Address::generate(env);
     client.initialize(&owner);
@@ -90,8 +85,7 @@ fn migrate_bumps_schema_version_to_current() {
 
     let new_version = client.migrate(&owner);
     assert_eq!(
-        new_version,
-        ANCHOR_SCHEMA_VERSION_CURRENT,
+        new_version, ANCHOR_SCHEMA_VERSION_CURRENT,
         "migrate() must return ANCHOR_SCHEMA_VERSION_CURRENT"
     );
     assert_eq!(

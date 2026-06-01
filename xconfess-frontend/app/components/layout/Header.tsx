@@ -52,6 +52,9 @@ export default function Header() {
               <Link href="/search" className={navLinkClass}>
                 Search
               </Link>
+              <Link href="/compare" className={navLinkClass}>
+                Compare
+              </Link>
               <Link href="/profile" className={navLinkClass}>
                 Profile
               </Link>

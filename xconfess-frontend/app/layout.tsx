@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 };
 
 import { NetworkBanner } from "@/app/components/common/NetworkBanner";
+import { WebSocketIndicator } from "@/app/components/common/WebSocketIndicator";
 
 import { NetworkStatusProvider } from "@/app/lib/providers/NetworkStatusProvider";
 
@@ -35,6 +36,7 @@ export default function RootLayout({
                 <QueryProvider>
                   <ToastProvider>
                     <NetworkBanner />
+                    <WebSocketIndicator />
                     {children}
 
                     {/* Onboarding system */}
