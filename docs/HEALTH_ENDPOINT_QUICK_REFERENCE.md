@@ -47,8 +47,8 @@ readinessProbe:
 The readiness probe (`/api/health/ready`) checks:
 
 1. **Database** — Postgres connection via TypeORM ping
-2. **Redis** — Redis connection health
-3. **Queues** — BullMQ queue worker availability
+2. **Redis** — Redis connection health. Conditioned on `ENABLE_BACKGROUND_JOBS=true`; returns `mode: disabled` when jobs are off.
+3. **Queues** — BullMQ queue worker availability. Conditioned on `ENABLE_BACKGROUND_JOBS=true`; returns `mode: disabled` when jobs are off.
 4. **Schema** — Confession table exists and matches expected schema
 
 ## Response examples
@@ -66,10 +66,26 @@ The readiness probe (`/api/health/ready`) checks:
 ```json
 {
   "status": "error",
-  "details": [
-    { "database": { "status": "up" } },
-    { "redis": { "status": "down", "message": "Connection refused" } }
-  ]
+  "info": {
+    "database": { "status": "up" }
+  },
+  "error": {
+    "redis": {
+      "status": "down",
+      "host": "localhost",
+      "port": 6379,
+      "error": "connect ECONNREFUSED 127.0.0.1:6379"
+    }
+  },
+  "details": {
+    "database": { "status": "up" },
+    "redis": {
+      "status": "down",
+      "host": "localhost",
+      "port": 6379,
+      "error": "connect ECONNREFUSED 127.0.0.1:6379"
+    }
+  }
 }
 ```
 

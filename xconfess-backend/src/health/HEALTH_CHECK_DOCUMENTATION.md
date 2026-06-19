@@ -244,7 +244,12 @@ psql -h 127.0.0.1 -U <DB_USERNAME> -d <DB_NAME> -c "SELECT 1;"
 **Symptom**
 
 ```json
-"redis": { "status": "down", "message": "connect ECONNREFUSED 127.0.0.1:6379" }
+"redis": {
+  "status": "down",
+  "host": "localhost",
+  "port": 6379,
+  "error": "connect ECONNREFUSED 127.0.0.1:6379"
+}
 ```
 
 **Causes and fixes**
@@ -262,6 +267,8 @@ psql -h 127.0.0.1 -U <DB_USERNAME> -d <DB_NAME> -c "SELECT 1;"
 redis-cli ping
 # expected: PONG
 ```
+
+**Note:** The Redis check only runs when `ENABLE_BACKGROUND_JOBS=true`. When background jobs are disabled, the indicator returns `{ status: 'up', mode: 'disabled' }` and does not attempt to contact Redis.
 
 ---
 
@@ -284,6 +291,32 @@ redis-cli ping
 > **Note:** The key in the response body is `queues` (plural), matching the `key` argument passed in the controller. Use this when grepping logs or writing alerting rules.
 
 ---
+
+### Redis health — disabled mode (local development)
+
+When `ENABLE_BACKGROUND_JOBS` is **not** set to the exact string `"true"`, the Redis health indicator returns a `disabled` mode instead of attempting a Redis PING. This prevents the readiness probe from failing in environments where Redis is intentionally absent (e.g. local development or CI pipelines that don't need background jobs).
+
+**Response — disabled**
+
+```json
+"redis": {
+  "status": "up",
+  "mode": "disabled",
+  "reason": "ENABLE_BACKGROUND_JOBS is not set (defaults to disabled)",
+  "severity": "info"
+}
+```
+
+**How to interpret the reason field**
+
+| `ENABLE_BACKGROUND_JOBS` value | Reason message includes | Meaning |
+|---|---|---|
+| `"false"` | `"intentionally disabled"` | Dev/CI — expected and fine |
+| `undefined` / not set | `"not set (defaults to disabled)"` | Might be accidental in production |
+| `"true"` | *(no disabled mode — Redis PING is performed)* | Production — Redis expected |
+| Any other value | `expected "true" to enable"` | Likely a typo — fix to `"true"` |
+
+> **Important for production:** Always set `ENABLE_BACKGROUND_JOBS=true` in production environments. Omitting this variable causes the readiness probe to skip the Redis check entirely — the probe will pass even if Redis is down.
 
 ### Queue health — disabled mode (local development)
 
@@ -406,7 +439,7 @@ curl -s http://localhost:3000/api/health/ready | jq .status
 |---|---|
 | `src/health/health.controller.ts` | Route handlers for `/live`, `/ready`, and the `/health` alias |
 | `src/health/health.module.ts` | Registers health indicators and wires `TerminusModule` |
-| `src/health/redis.health.ts` | Custom Redis health indicator |
+| `src/health/redis.health.ts` | Custom Redis health indicator — pings Redis via ioredis; conditioned on `ENABLE_BACKGROUND_JOBS` |
 | `src/health/queue.health.ts` | Custom BullMQ queue health indicator |
 | `src/health/schema-readiness.health.ts` | Delegates to `MigrationVerificationService` to validate `anonymous_confessions` schema |
 | `src/database/migration-verification.service.ts` | Queries Postgres catalog for required columns and indexes |
