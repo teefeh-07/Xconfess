@@ -9,6 +9,7 @@ import appConfig from './config/app.config';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfessionModule } from './confession/confession.module';
+import { ConfessionDraftModule } from './confession-draft/confession-draft.module';
 import { SearchDiscoveryModule } from './search-discovery/search-discovery.module';
 import { ReactionModule } from './reaction/reaction.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -109,6 +110,7 @@ import { BullModule } from '@nestjs/bullmq';
     UserModule,
     AuthModule,
     ConfessionModule,
+    ConfessionDraftModule,
     SearchDiscoveryModule,
     ReactionModule,
     MessagesModule,
