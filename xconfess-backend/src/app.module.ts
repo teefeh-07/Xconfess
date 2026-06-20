@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -71,14 +71,20 @@ import { BullModule } from '@nestjs/bullmq';
       useFactory: (config: ConfigService) => {
         const redisHost = config.get<string>('REDIS_HOST');
         const redisPort = config.get<number>('REDIS_PORT');
+        const jobsEnabled = config.get<string>('ENABLE_BACKGROUND_JOBS') === 'true';
 
-        if (config.get<string>('ENABLE_BACKGROUND_JOBS') === 'true') {
+        if (jobsEnabled) {
           if (!redisHost || !redisPort) {
             throw new Error(
               'Misconfiguration: ENABLE_BACKGROUND_JOBS is true but ' +
                 'REDIS_HOST or REDIS_PORT is missing from the environment.',
             );
           }
+        } else {
+          new Logger('Bootstrap').warn(
+            'ENABLE_BACKGROUND_JOBS is not "true" — BullMQ workers are disabled. ' +
+              'Queue producers will silently skip enqueue calls. Redis connectivity is not required.',
+          );
         }
 
         return {

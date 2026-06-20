@@ -6,7 +6,7 @@ import { ConfessionDraftService } from './confession-draft.service';
 
 @Injectable()
 export class ConfessionDraftQueue implements OnModuleDestroy {
-  private readonly worker: Worker;
+  private worker?: Worker;
   private readonly logger = new Logger(ConfessionDraftQueue.name);
 
   constructor(
@@ -15,6 +15,13 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
     @InjectQueue('confession-draft-publisher')
     private readonly queue: Queue,
   ) {
+    if (configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      this.logger.warn(
+        'ConfessionDraftQueue: ENABLE_BACKGROUND_JOBS is not true — Worker not started.',
+      );
+      return;
+    }
+
     const redisConfig = {
       host: this.configService.get('REDIS_HOST', 'localhost'),
       port: this.configService.get('REDIS_PORT', 6379),
@@ -87,6 +94,7 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    if (!this.worker) return;
     await this.worker.close();
     await this.queue.close();
   }

@@ -5,6 +5,7 @@ import {
   ConflictException,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -69,6 +70,12 @@ export class DataExportService {
   ) {}
 
   async requestExport(userId: string) {
+    if (this.configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      throw new ServiceUnavailableException(
+        'Data export requires background job processing. Set ENABLE_BACKGROUND_JOBS=true and ensure Redis is available.',
+      );
+    }
+
     // 1a. Duplicate-submission guard: reject if a job is already PENDING or PROCESSING.
     const activeJob = await this.exportRepository.findOne({
       where: [

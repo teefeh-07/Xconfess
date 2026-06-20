@@ -11,6 +11,7 @@ import { NOTIFICATION_QUEUE } from '../processors/notification.processor';
 import { CreateNotificationDto, NotificationQueryDto } from '../dto/notification.dto';
 import { Queue } from 'bullmq';
 import { AppLogger } from '../../logger/logger.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class NotificationService {
@@ -22,6 +23,7 @@ export class NotificationService {
     @InjectQueue(NOTIFICATION_QUEUE)
     private notificationQueue: Queue,
     private readonly appLogger: AppLogger,
+    private readonly configService: ConfigService,
   ) {}
 
   async enqueueNotification(
@@ -29,6 +31,14 @@ export class NotificationService {
     payload: any,
     jobId?: string,
   ): Promise<void> {
+    if (this.configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      this.appLogger.warn(
+        `enqueueNotification skipped (jobs disabled): type=${type}`,
+        'NotificationService',
+      );
+      return;
+    }
+
     await this.notificationQueue.add(
       'send-notification',
       {
@@ -63,10 +73,11 @@ export class NotificationService {
     const notification = this.notificationRepository.create(dto);
     await this.notificationRepository.save(notification);
 
-    // Queue for email notification if enabled
+    // Queue for email notification if enabled and background jobs are active
     if (
       preference.enableEmailNotifications &&
-      this.shouldSendEmail(preference, dto.type)
+      this.shouldSendEmail(preference, dto.type) &&
+      this.configService.get<string>('ENABLE_BACKGROUND_JOBS') === 'true'
     ) {
       await this.notificationQueue.add(
         'send-notification',
