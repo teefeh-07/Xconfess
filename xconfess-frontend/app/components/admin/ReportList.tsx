@@ -145,11 +145,11 @@ export default function ReportList() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {confirmDialog}
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+      <div className="min-w-0 bg-white dark:bg-gray-800 shadow rounded-lg p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -221,7 +221,7 @@ export default function ReportList() {
               className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <ExportCsvButton
               onClick={() => {
                 const exportData: Record<string, unknown>[] = reports.map((r: Report) => ({
@@ -242,6 +242,7 @@ export default function ReportList() {
               }}
               isExporting={isExportingCsv}
               label="Export Reports CSV"
+              className="min-h-[44px]"
             />
             {selectedIds.size > 0 && (
               <Button
@@ -249,7 +250,7 @@ export default function ReportList() {
                 size="sm"
                 onClick={handleBulkResolve}
                 aria-label={`Resolve ${selectedIds.size} selected reports`}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm"
+                className="min-h-[44px] rounded-md bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
               >
                 Resolve Selected ({selectedIds.size})
               </Button>
@@ -281,9 +282,9 @@ export default function ReportList() {
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain">
+            <table className="min-w-[48rem] divide-y divide-gray-200 dark:divide-gray-700 md:min-w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -329,7 +330,7 @@ export default function ReportList() {
                       aria-label={`Select report ${report.id}`}
                       checked={selectedIds.has(report.id)}
                       onChange={() => toggleSelect(report.id)}
-                      className="rounded border-gray-300"
+                      className="min-h-[44px] min-w-[44px] rounded border-gray-300"
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
@@ -352,7 +353,7 @@ export default function ReportList() {
                       size="sm"
                       onClick={() => setSelectedReport(report.id)}
                       aria-label={`View report ${report.id}`}
-                      className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-0"
+                      className="min-h-[44px] min-w-[44px] rounded-md px-3 text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
                     >
                       View
                     </Button>
@@ -367,12 +368,12 @@ export default function ReportList() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-700 dark:text-gray-300">
             Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)}{" "}
             of {total} results
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}

@@ -72,9 +72,9 @@ export default function AuditLogList() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+      <div className="min-w-0 bg-white dark:bg-gray-800 shadow rounded-lg p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -180,14 +180,14 @@ export default function AuditLogList() {
                 `audit-logs-${new Date().toISOString().split("T")[0]}.csv`,
               );
             }}
-            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+            className="min-h-[44px] rounded-md bg-gray-600 px-4 py-2 text-sm text-white hover:bg-gray-700"
           >
             Export CSV
           </button>
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
+              className="min-h-[44px] rounded-md px-3 text-sm text-gray-500 underline hover:text-gray-700 dark:hover:text-gray-300"
             >
               Clear all filters
             </button>
@@ -196,9 +196,9 @@ export default function AuditLogList() {
       </div>
 
       {/* Audit Logs Table */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
+        <div className="max-w-full overflow-x-auto overscroll-x-contain">
+          <table className="min-w-[56rem] divide-y divide-gray-200 dark:divide-gray-700 md:min-w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Admin</th>
@@ -250,22 +250,22 @@ export default function AuditLogList() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-700 dark:text-gray-300">
             Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} results
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 text-sm"
+              className="min-h-[44px] rounded-md border px-4 py-2 text-sm disabled:opacity-50"
             >
               Previous
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 text-sm"
+              className="min-h-[44px] rounded-md border px-4 py-2 text-sm disabled:opacity-50"
             >
               Next
             </button>

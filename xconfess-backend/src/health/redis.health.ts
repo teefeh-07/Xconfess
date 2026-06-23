@@ -4,125 +4,71 @@ import {
   HealthCheckError,
 } from '@nestjs/terminus';
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 
-interface QueueDetail {
-  status: 'up' | 'down';
-  workers?: number;
-  counts?: Record<string, number>;
-  error?: string;
-  hint?: string;
+function resolveDisabledReason(rawValue: unknown): string {
+  if (rawValue === 'false') {
+    return 'ENABLE_BACKGROUND_JOBS is set to "false" (background jobs intentionally disabled)';
+  }
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return 'ENABLE_BACKGROUND_JOBS is not set (defaults to disabled)';
+  }
+  return `ENABLE_BACKGROUND_JOBS is set to "${String(rawValue)}" (expected "true" to enable)`;
 }
 
 @Injectable()
-export class QueueHealthIndicator extends HealthIndicator {
-  private readonly logger = new Logger(QueueHealthIndicator.name);
+export class RedisHealthIndicator extends HealthIndicator {
+  private readonly logger = new Logger(RedisHealthIndicator.name);
 
-  constructor(
-    @InjectQueue('notifications') private readonly notifications: Queue,
-    @InjectQueue('notifications-dlq') private readonly dlq: Queue,
-    @InjectQueue('export-queue') private readonly exportQueue: Queue,
-    @InjectQueue('confession-draft-publisher')
-    private readonly draftQueue: Queue,
-    private readonly configService: ConfigService,
-  ) {
+  constructor(private readonly configService: ConfigService) {
     super();
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    const jobsEnabled =
-      this.configService.get<string>('ENABLE_BACKGROUND_JOBS') === 'true';
+    const rawConfig = this.configService.get<string | undefined>(
+      'ENABLE_BACKGROUND_JOBS',
+    );
+    const jobsEnabled = rawConfig === 'true';
 
     if (!jobsEnabled) {
       return this.getStatus(key, true, {
         mode: 'disabled',
-        reason: 'ENABLE_BACKGROUND_JOBS is not set to "true" — queue workers are not expected.',
+        reason: resolveDisabledReason(rawConfig),
+        severity: 'info',
       });
     }
 
-    const queues: Array<{
-      name: string;
-      queue: Queue;
-      requiresWorkers: boolean;
-    }> = [
-      {
-        name: 'notifications',
-        queue: this.notifications,
-        requiresWorkers: true,
-      },
-      // DLQ is a retention queue — no processor is expected to run against it.
-      {
-        name: 'notifications-dlq',
-        queue: this.dlq,
-        requiresWorkers: false,
-      },
-      {
-        name: 'export-queue',
-        queue: this.exportQueue,
-        requiresWorkers: true,
-      },
-      {
-        name: 'confession-draft-publisher',
-        queue: this.draftQueue,
-        requiresWorkers: true,
-      },
-    ];
+    const host =
+      this.configService.get<string>('REDIS_HOST') || 'localhost';
+    const port = this.configService.get<number>('REDIS_PORT') || 6379;
 
-    const details: Record<string, QueueDetail> = {};
-    let allHealthy = true;
+    const client = new Redis({
+      host,
+      port,
+      connectTimeout: 2000,
+      lazyConnect: true,
+      retryStrategy: () => null,
+    });
 
-    await Promise.all(
-      queues.map(async ({ name, queue, requiresWorkers }) => {
-        try {
-          const [counts, workers] = await Promise.all([
-            queue.getJobCounts('active', 'waiting', 'failed', 'delayed'),
-            queue.getWorkers(),
-          ]);
-
-          const workerCount = workers.length;
-          const healthy = !requiresWorkers || workerCount > 0;
-
-          if (!healthy) {
-            allHealthy = false;
-          }
-
-          details[name] = {
-            status: healthy ? 'up' : 'down',
-            workers: workerCount,
-            counts,
-            ...(healthy
-              ? {}
-              : {
-                  hint: `Queue "${name}" has no active workers. Ensure the processor service is running and ENABLE_BACKGROUND_JOBS=true is set.`,
-                }),
-          };
-        } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.logger.error(
-            `Queue health check failed for "${name}": ${message}`,
-          );
-          allHealthy = false;
-          details[name] = {
-            status: 'down',
-            error: message,
-            hint: `Could not connect to queue "${name}". Verify REDIS_HOST, REDIS_PORT, and that the Bull queue name matches the registered queue in health.module.ts.`,
-          };
-        }
-      }),
-    );
-
-    if (!allHealthy) {
-      // Surface per-queue breakdown so the contributor sees exactly which
-      // queues are down without needing to read server logs.
+    try {
+      await client.connect();
+      await client.ping();
+      return this.getStatus(key, true, { host, port });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(`Redis health check failed: ${message}`);
       throw new HealthCheckError(
-        'One or more queues are unhealthy',
-        this.getStatus(key, false, details),
+        'Redis is unreachable',
+        this.getStatus(key, false, { host, port, error: message }),
       );
+    } finally {
+      try {
+        await client.disconnect();
+      } catch {
+        // ignore disconnect errors
+      }
     }
-
-    return this.getStatus(key, true, details);
   }
 }

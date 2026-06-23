@@ -1,0 +1,41 @@
+import { Gender } from "@/app/lib/utils/validation";
+
+/**
+ * Canonical Draft shape shared by local (localStorage) and remote (API)
+ * draft storage. `id` is a client-generated UUID for local drafts, or the
+ * server-assigned id once a draft has been synced to the backend.
+ */
+export interface Draft {
+  id: string;
+  title?: string;
+  body: string;
+  gender?: Gender;
+  savedAt: number; // epoch ms, used for sort + "last saved" display
+  characterCount: number;
+  scheduledFor?: string;
+  timezone?: string;
+}
+
+export type DraftInput = Omit<Draft, "id" | "savedAt" | "characterCount">;
+export type DraftUpdate = Partial<Omit<Draft, "id" | "savedAt">>;
+
+/**
+ * Wire format returned by the backend. Kept separate from `Draft` in case
+ * the API's field names/casing don't match the frontend's local shape
+ * (e.g. snake_case, ISO date strings instead of epoch ms).
+ *
+ * ASSUMPTION: backend does not exist yet (no app/api/confessions/drafts
+ * folder in the repo at time of writing). This contract is a best guess
+ * based on the ticket's acceptance criteria. Update `toDraft`/`toApiBody`
+ * in app/lib/api/drafts.ts if the real backend differs.
+ */
+export interface DraftDTO {
+  id: string;
+  title?: string;
+  body: string;
+  gender?: Gender;
+  savedAt: string; // ISO 8601
+  characterCount: number;
+  scheduledFor?: string;
+  timezone?: string;
+}
