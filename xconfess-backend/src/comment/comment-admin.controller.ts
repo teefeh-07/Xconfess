@@ -18,6 +18,8 @@ import { AdminGuard } from '../auth/admin.guard';
 import { Request as ExpressRequest } from 'express';
 import { ModerationStatus } from './entities/moderation-comment.entity';
 import { User } from '../user/entities/user.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditActionType } from '../audit-log/audit-log.entity';
 
 interface RequestWithUser extends ExpressRequest {
   user?: any;
@@ -38,7 +40,7 @@ interface RequestWithUser extends ExpressRequest {
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin/comments')
 export class CommentAdminController {
-  constructor(private readonly service: CommentService) {}
+  constructor(private readonly service: CommentService, private readonly auditLogService: AuditLogService) {}
 
   /**
    * Approve a pending comment.
@@ -53,7 +55,27 @@ export class CommentAdminController {
   @ApiResponse({ status: 404, description: 'Comment or moderation entry not found' })
   async approveComment(@Param('id') id: string, @Req() req: RequestWithUser) {
     const user = req.user as User;
-    return this.service.moderateComment(+id, ModerationStatus.APPROVED, user);
+    const result = await this.service.moderateComment(+id, ModerationStatus.APPROVED, user);
+    this.auditLogService.log({
+      actionType: AuditActionType.COMMENT_APPROVED,
+      metadata: {
+        commentId: id,
+        entityType: 'comment',
+        entityId: id,
+        status: ModerationStatus.APPROVED,
+      },
+      context: {
+        userId: String(user.id),
+        actor: {
+          type: 'admin',
+          id: String(user.id),
+          userId: String(user.id),
+        },
+      },
+    }).catch((error) => {
+      // Audit logging must not break moderation
+    });
+    return result;
   }
 
   /**
@@ -69,6 +91,26 @@ export class CommentAdminController {
   @ApiResponse({ status: 404, description: 'Comment or moderation entry not found' })
   async rejectComment(@Param('id') id: string, @Req() req: RequestWithUser) {
     const user = req.user as User;
-    return this.service.moderateComment(+id, ModerationStatus.REJECTED, user);
+    const result = await this.service.moderateComment(+id, ModerationStatus.REJECTED, user);
+    this.auditLogService.log({
+      actionType: AuditActionType.COMMENT_REJECTED,
+      metadata: {
+        commentId: id,
+        entityType: 'comment',
+        entityId: id,
+        status: ModerationStatus.REJECTED,
+      },
+      context: {
+        userId: String(user.id),
+        actor: {
+          type: 'admin',
+          id: String(user.id),
+          userId: String(user.id),
+        },
+      },
+    }).catch((error) => {
+      // Audit logging must not break moderation
+    });
+    return result;
   }
 }

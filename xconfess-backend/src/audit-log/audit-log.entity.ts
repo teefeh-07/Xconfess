@@ -17,6 +17,8 @@ export enum AuditActionType {
   COMMENT_DELETED = 'comment_deleted',
   CONFESSION_HIDDEN = 'confession_hidden',
   CONFESSION_UNHIDDEN = 'confession_unhidden',
+  COMMENT_APPROVED = 'comment_approved',
+  COMMENT_REJECTED = 'comment_rejected',
 
   // Report actions
   REPORT_CREATED = 'report_created',
