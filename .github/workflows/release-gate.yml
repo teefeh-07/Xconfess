@@ -211,25 +211,25 @@ jobs:
             echo ""
             echo "| Component | Status |"
             echo "|-----------|--------|"
-            echo "| Backend | ${{ needs.backend-gate.outputs.status == 'success' && '✅ Pass' || '❌ Fail' }} |"
-            echo "| Frontend | ${{ needs.frontend-gate.outputs.status == 'success' && '✅ Pass' || '❌ Fail' }} |"
-            echo "| Contracts | ${{ needs.contracts-gate.outputs.status == 'success' && '✅ Pass' || '❌ Fail' }} |"
+            echo "| Backend | ${{ needs.backend-gate.result == 'success' && '✅ Pass' || '❌ Fail' }} |"
+            echo "| Frontend | ${{ needs.frontend-gate.result == 'success' && '✅ Pass' || '❌ Fail' }} |"
+            echo "| Contracts | ${{ needs.contracts-gate.result == 'success' && '✅ Pass' || '❌ Fail' }} |"
             echo ""
             echo "## Details"
             echo ""
-            if [ "${{ needs.backend-gate.outputs.status }}" = "success" ]; then
+            if [ "${{ needs.backend-gate.result }}" = "success" ]; then
               echo "✅ **Backend**: Build, lint, and tests passed"
             else
               echo "❌ **Backend**: Build or tests failed"
             fi
             echo ""
-            if [ "${{ needs.frontend-gate.outputs.status }}" = "success" ]; then
+            if [ "${{ needs.frontend-gate.result }}" = "success" ]; then
               echo "✅ **Frontend**: Build, lint, and tests passed"
             else
               echo "❌ **Frontend**: Build or tests failed"
             fi
             echo ""
-            if [ "${{ needs.contracts-gate.outputs.status }}" = "success" ]; then
+            if [ "${{ needs.contracts-gate.result }}" = "success" ]; then
               echo "✅ **Contracts**: Formatting, linting, and tests passed"
             else
               echo "❌ **Contracts**: Formatting, linting, or tests failed"
@@ -266,9 +266,9 @@ jobs:
 
       - name: Determine gate status
         run: |
-          if [ "${{ needs.backend-gate.outcome }}" = "success" ] && \
-             [ "${{ needs.frontend-gate.outcome }}" = "success" ] && \
-             [ "${{ needs.contracts-gate.outcome }}" = "success" ]; then
+          if [ "${{ needs.backend-gate.result }}" = "success" ] && \
+             [ "${{ needs.frontend-gate.result }}" = "success" ] && \
+             [ "${{ needs.contracts-gate.result }}" = "success" ]; then
             echo "✅ All gates passed - Release candidate ready"
             exit 0
           else
@@ -280,7 +280,7 @@ jobs:
     name: E2E Pre-Release Check
     runs-on: ubuntu-latest
     needs: [backend-gate, frontend-gate, contracts-gate]
-    if: always() && needs.backend-gate.outcome == 'success' && needs.frontend-gate.outcome == 'success'
+    if: always() && needs.backend-gate.result == 'success' && needs.frontend-gate.result == 'success'
     timeout-minutes: 15
     steps:
       - name: Checkout
