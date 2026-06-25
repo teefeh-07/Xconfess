@@ -75,6 +75,12 @@ export const queryKeys = {
       all: () => ["admin", "analytics"] as const,
     },
 
+    observability: {
+      all: () => ["admin", "observability"] as const,
+      list: (params?: Record<string, unknown>) =>
+        ["admin", "observability", params ?? {}] as const,
+    },
+
     notificationJobs: {
       // ["admin", "notificationJobs"] — invalidates every job query
       all: () => ["admin", "notificationJobs"] as const,

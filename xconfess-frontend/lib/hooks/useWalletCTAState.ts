@@ -30,19 +30,23 @@ export function getWalletCTAState(
     return {
       status: "not-installed",
       disabled: true,
-      guidance: "Install Freighter wallet to continue.",
+      guidance: "Install the Freighter browser extension to connect your Stellar wallet.",
     };
   }
 
   if (!wallet.isConnected) {
-    return { status: "not-connected", disabled: false, guidance: null };
+    return {
+      status: "not-connected",
+      disabled: false,
+      guidance: "Connect your Freighter wallet to perform on-chain actions.",
+    };
   }
 
   if (!wallet.isReady) {
     return {
       status: "not-ready",
       disabled: true,
-      guidance: wallet.readinessError || "Wallet not ready.",
+      guidance: wallet.readinessError || "Your wallet is not ready.",
     };
   }
 

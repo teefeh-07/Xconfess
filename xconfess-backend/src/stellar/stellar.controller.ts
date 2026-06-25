@@ -3,12 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse, ApiParam } from '@nestjs/swagger';
+import { StellarConfigResponseDto } from './dto/stellar-config-response.dto';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSDK from '@stellar/stellar-sdk';
 import { StellarService } from './stellar.service';
@@ -29,6 +31,8 @@ import {
 @ApiTags('Stellar')
 @Controller('stellar')
 export class StellarController {
+  private readonly logger = new Logger(StellarController.name);
+
   constructor(
     private stellarService: StellarService,
     private contractService: ContractService,
@@ -37,10 +41,60 @@ export class StellarController {
   ) {}
 
   @Get('config')
-  @ApiOperation({ summary: 'Get Stellar network configuration' })
-  @ApiResponse({ status: 200, description: 'Network configuration' })
-  getConfig() {
+  @ApiOperation({
+    summary: 'Get Stellar network and contract deployment configuration',
+    description:
+      'Returns the configured network, public RPC endpoints, and Soroban contract IDs. ' +
+      'Never includes secrets, deployer keys, or server signer material. ' +
+      'Unset contract IDs are returned as null.',
+  })
+  @ApiOkResponse({
+    description: 'Public Stellar deployment summary',
+    type: StellarConfigResponseDto,
+  })
+  getConfig(): StellarConfigResponseDto {
     return this.stellarService.getNetworkConfig();
+  }
+
+  @Get('anchor/verify/:confessionHash')
+  @ApiOperation({ summary: 'Verify a confession hash on the anchor contract' })
+  @ApiParam({
+    name: 'confessionHash',
+    description: 'Hex-encoded confession hash to verify on-chain',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Confession anchor verification result',
+    schema: {
+      example: {
+        isAnchored: true,
+        timestamp: 1684939200,
+      },
+    },
+  })
+  async verifyAnchor(@Param('confessionHash') confessionHash: string, @Req() req: any) {
+    const requestId = req.requestId as string | undefined;
+    this.logger.log({
+      message: 'Anchor verify started',
+      requestId,
+      confessionHash,
+    });
+
+    if (!/^[0-9a-fA-F]{64}$/.test(confessionHash)) {
+      throw new BadRequestException('Invalid confession hash format. Expected 32-byte hex.');
+    }
+
+    const timestamp = await this.contractService.verifyConfession(confessionHash);
+    this.logger.log({
+      message: 'Anchor verify completed',
+      requestId,
+      confessionHash,
+      isAnchored: timestamp !== null,
+    });
+    return {
+      isAnchored: timestamp !== null,
+      timestamp,
+    };
   }
 
   @Get('balance/:address')
@@ -53,8 +107,10 @@ export class StellarController {
   @Post('verify')
   @ApiOperation({ summary: 'Verify transaction on-chain' })
   @ApiResponse({ status: 200, description: 'Transaction verification result' })
-  async verifyTransaction(@Body() dto: VerifyTransactionDto) {
-    return this.stellarService.verifyTransaction(dto.txHash);
+  async verifyTransaction(@Body() dto: VerifyTransactionDto, @Req() req: any) {
+    const requestId = req.requestId as string | undefined;
+    this.logger.log({ message: 'Stellar tx verify started', requestId, txHash: dto.txHash });
+    return this.stellarService.verifyTransaction(dto.txHash, requestId);
   }
 
   @Get('account-exists/:address')

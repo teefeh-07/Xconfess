@@ -214,6 +214,55 @@ When fixture version changes, backend must implement migration logic to handle b
 - `maintainer/issues/170-fix-backend-tip-verification-idempotency-replay.md`
 - `maintainer/issues/173-feat-backend-chain-reconciliation-worker.md`
 
+## Correlation Log Fields
+
+Every verify call emits structured log lines with the following correlation fields so a single attempt can be traced end-to-end:
+
+| Field | Type | Present in |
+| :--- | :--- | :--- |
+| `requestId` | string (UUID) | All tip and anchor verify log lines |
+| `confessionId` | string (UUID) | Tip verify log lines |
+| `txHash` | string (64-char hex) | Tip and stellar verify log lines |
+| `confessionHash` | string (64-char hex) | Anchor verify log lines |
+| `tipId` | string | Success and idempotent-replay log lines |
+| `amount` | number | Tip verify success log line |
+
+### Log lifecycle events (tip verify)
+
+| Event | Level | Key fields |
+| :--- | :--- | :--- |
+| Verify request received | `LOG` | `requestId`, `confessionId`, `txHash` |
+| Idempotent replay detected | `DEBUG` | `requestId`, `confessionId`, `txHash`, `tipId` |
+| Conflict (txId reuse) | `WARN` | `requestId`, `confessionId`, `txHash`, `originalConfessionId` |
+| Confession not found | `WARN` | `requestId`, `confessionId`, `txHash` |
+| Transaction not found on-chain | `WARN` | `requestId`, `confessionId`, `txHash` |
+| Verify succeeded | `LOG` | `requestId`, `confessionId`, `txHash`, `tipId`, `amount` |
+| Horizon fetch error | `ERROR` | `requestId`, `txHash` |
+
+### Log lifecycle events (anchor verify)
+
+| Event | Level | Key fields |
+| :--- | :--- | :--- |
+| Verify request received | `LOG` | `requestId`, `confessionHash` |
+| Verify completed | `LOG` | `requestId`, `confessionHash`, `isAnchored` |
+
+### Grep recipes
+
+```bash
+# Trace a single verify attempt end-to-end
+grep '"requestId":"<value>"' app.log
+
+# Find all log lines for a specific txHash
+grep '"txHash":"<value>"' app.log
+
+# Confirm requestId and txHash appear on the same line
+grep '"requestId":"<value>"' app.log | grep '"txHash":"<value>"'
+```
+
+### Security invariant
+
+`requestId` is echoed from the incoming `x-request-id` header (or auto-generated). No secrets, private keys, or seed phrases are ever written to logs. Sender addresses are omitted when the tip is marked anonymous.
+
 ## Metrics & Observability (Reconciliation Lag)
 
 As per Issue #783, the backend emits bounded metrics to track the age of pending records. This allows operators to differentiate between "normal network delay" and "stuck records."

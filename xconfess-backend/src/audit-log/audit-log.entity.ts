@@ -17,6 +17,8 @@ export enum AuditActionType {
   COMMENT_DELETED = 'comment_deleted',
   CONFESSION_HIDDEN = 'confession_hidden',
   CONFESSION_UNHIDDEN = 'confession_unhidden',
+  COMMENT_APPROVED = 'comment_approved',
+  COMMENT_REJECTED = 'comment_rejected',
 
   // Report actions
   REPORT_CREATED = 'report_created',
@@ -59,9 +61,15 @@ export enum AuditActionType {
   EXPORT_GENERATION_COMPLETED = 'export_generation_completed',
   EXPORT_LINK_REFRESHED = 'export_link_refreshed',
   EXPORT_DOWNLOADED = 'export_downloaded',
+  EXPORT_TOKEN_EXPIRED = 'export_token_expired',   // <-- ADDED
+  EXPORT_EXPIRED = 'export_expired',               // <-- ADDED
 
   /** Privileged Stellar server-signed contract invocation */
   STELLAR_CONTRACT_INVOCATION = 'stellar_contract_invocation',
+
+  // Stellar Anchor Retry Logic
+  STELLAR_ANCHOR_RETRY = 'stellar_anchor_retry',
+  STELLAR_ANCHOR_FAILED = 'stellar_anchor_failed',
 }
 
 @Entity('audit_logs')
@@ -84,7 +92,6 @@ export class AuditLog {
   @Column({
     type: 'enum',
     enum: AuditActionType,
-    name: 'action',
   })
   action: AuditActionType;
 

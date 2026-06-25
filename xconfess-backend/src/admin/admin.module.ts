@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminController } from './admin.controller';
 import { AdminService } from './services/admin.service';
 import { ModerationService } from './services/moderation.service';
+import { StellarDiagnosticsService } from './services/stellar-diagnostics.service';
 // import { Report } from 'src/report/report.entity'
 import { Report } from './entities/report.entity'
 import { AuditLog } from '../audit-log/audit-log.entity';
@@ -20,6 +21,8 @@ import { WsRolesGuard } from '../auth/guards/ws-roles.guard';
 import { Reflector } from '@nestjs/core';
 import { Tip } from '../tipping/entities/tip.entity';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { StellarModule } from '../stellar/stellar.module';
 
 @Module({
   imports: [
@@ -35,12 +38,15 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     AuthModule,
     UserModule,
     AuditLogModule,
+    NotificationsModule,
+    StellarModule,
   ],
   controllers: [AdminController],
   providers: [
     AdminService,
     ModerationService,
     ModerationTemplateService,
+    StellarDiagnosticsService,
     AdminGateway,
     ReportsEventsListener,
     WebSocketLogger,

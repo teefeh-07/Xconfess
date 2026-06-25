@@ -1,12 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { BullModule, InjectQueue } from '@nestjs/bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Queue, Worker, Job } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { ConfessionDraftService } from './confession-draft.service';
 
 @Injectable()
 export class ConfessionDraftQueue implements OnModuleDestroy {
-  private readonly worker: Worker;
+  private readonly worker?: Worker;
   private readonly logger = new Logger(ConfessionDraftQueue.name);
 
   constructor(
@@ -15,6 +15,13 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
     @InjectQueue('confession-draft-publisher')
     private readonly queue: Queue,
   ) {
+    if (this.configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      this.logger.log(
+        'Confession draft publisher is disabled; set ENABLE_BACKGROUND_JOBS=true to enable it.',
+      );
+      return;
+    }
+
     const redisConfig = {
       host: this.configService.get('REDIS_HOST', 'localhost'),
       port: this.configService.get('REDIS_PORT', 6379),
@@ -25,6 +32,7 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
       async (job: Job) => {
         if (job.name === 'publish-due') {
           const ids = await this.draftService.enqueueDueDraftIds();
+
           await Promise.all(
             ids.map((id) =>
               this.queue.add(
@@ -39,12 +47,17 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
               ),
             ),
           );
+
           return { enqueued: ids.length };
         }
 
         if (job.name === 'publish-one') {
           const id = job.data?.id as string;
-          if (!id) return;
+
+          if (!id) {
+            return;
+          }
+
           await this.draftService.publishScheduledDraftById(id);
           return;
         }
@@ -59,6 +72,7 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
 
     this.worker.on('failed', (job, err) => {
       const trace = err instanceof Error ? err.stack : String(err);
+
       this.logger.error(
         `ConfessionDraftQueue job failed: name=${job?.name} id=${job?.id} data=${JSON.stringify(job?.data ?? {})}`,
         trace,
@@ -78,6 +92,7 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
         );
       } catch (err) {
         const trace = err instanceof Error ? err.stack : String(err);
+
         this.logger.error(
           'Failed to schedule publish-due recurring job',
           trace,
@@ -87,7 +102,7 @@ export class ConfessionDraftQueue implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.worker.close();
+    await this.worker?.close();
     await this.queue.close();
   }
 }

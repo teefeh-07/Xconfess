@@ -79,12 +79,12 @@ export default function UserManagement() {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {confirmDialog}
 
       {/* Search */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
-        <div className="flex gap-4">
+      <div className="min-w-0 bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+        <div className="flex min-w-0 gap-4">
           <input
             type="text"
             value={searchQuery}
@@ -93,22 +93,22 @@ export default function UserManagement() {
               setPage(1);
             }}
             placeholder="Search by username..."
-            className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
+            className="min-h-[44px] min-w-0 flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
           />
         </div>
       </div>
 
       {/* Users Table */}
       {searchQuery.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
           {isLoading ? (
             <div className="text-center py-8 text-gray-500">Loading users...</div>
           ) : users.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No users found</div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <div className="max-w-full overflow-x-auto overscroll-x-contain">
+                <table className="min-w-[44rem] divide-y divide-gray-200 dark:divide-gray-700 md:min-w-full">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -159,7 +159,7 @@ export default function UserManagement() {
                                 size="sm"
                                 onClick={() => handleBan(user)}
                                 aria-label={`Ban ${user.username}`}
-                                className="text-red-600 hover:text-red-900 dark:text-red-400 p-0"
+                                className="min-h-[44px] min-w-[44px] rounded-md px-3 text-red-600 hover:text-red-900 dark:text-red-400"
                               >
                                 Ban
                               </Button>
@@ -169,7 +169,7 @@ export default function UserManagement() {
                                 size="sm"
                                 onClick={() => handleUnban(user)}
                                 aria-label={`Unban ${user.username}`}
-                                className="text-green-600 hover:text-green-900 dark:text-green-400 p-0"
+                                className="min-h-[44px] min-w-[44px] rounded-md px-3 text-green-600 hover:text-green-900 dark:text-green-400"
                               >
                                 Unban
                               </Button>
@@ -179,7 +179,7 @@ export default function UserManagement() {
                               size="sm"
                               onClick={() => setSelectedUser(user)}
                               aria-label={`View history for ${user.username}`}
-                              className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 p-0"
+                              className="min-h-[44px] min-w-[64px] rounded-md px-3 text-indigo-600 hover:text-indigo-900 dark:text-indigo-400"
                             >
                               History
                             </Button>
@@ -193,12 +193,12 @@ export default function UserManagement() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                   <div className="text-sm text-gray-700 dark:text-gray-300">
                     Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total}{' '}
                     results
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}

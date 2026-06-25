@@ -20,9 +20,18 @@ jest.mock('ioredis', () => {
   });
 });
 
+function configGetStub(overrides?: Record<string, unknown>) {
+  return jest.fn().mockImplementation((key: string) => {
+    if (overrides && key in overrides) return overrides[key];
+    if (key === 'REDIS_HOST') return 'localhost';
+    if (key === 'REDIS_PORT') return 6379;
+    if (key === 'ENABLE_BACKGROUND_JOBS') return 'true';
+    return null;
+  });
+}
+
 describe('RedisHealthIndicator', () => {
   let indicator: RedisHealthIndicator;
-  let configService: ConfigService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -30,19 +39,12 @@ describe('RedisHealthIndicator', () => {
         RedisHealthIndicator,
         {
           provide: ConfigService,
-          useValue: {
-            get: jest.fn().mockImplementation((key) => {
-              if (key === 'REDIS_HOST') return 'localhost';
-              if (key === 'REDIS_PORT') return 6379;
-              return null;
-            }),
-          },
+          useValue: { get: configGetStub() },
         },
       ],
     }).compile();
 
     indicator = module.get<RedisHealthIndicator>(RedisHealthIndicator);
-    configService = module.get<ConfigService>(ConfigService);
 
     // Reset shared mocks
     mockConnect.mockReset();
@@ -85,5 +87,32 @@ describe('RedisHealthIndicator', () => {
       HealthCheckError,
     );
     expect(mockDisconnect).toHaveBeenCalled();
+  });
+
+  it('should return disabled mode when ENABLE_BACKGROUND_JOBS is not true', async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RedisHealthIndicator,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: configGetStub({ ENABLE_BACKGROUND_JOBS: 'false' }),
+          },
+        },
+      ],
+    }).compile();
+
+    const ind = module.get<RedisHealthIndicator>(RedisHealthIndicator);
+    const result = await ind.isHealthy('redis');
+
+    expect(result).toEqual({
+      redis: {
+        status: 'up',
+        mode: 'disabled',
+        reason: expect.stringContaining('intentionally disabled'),
+        severity: 'info',
+      },
+    });
+    expect(mockConnect).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import axios from "axios";
 import {
   Card,
   CardContent,
@@ -26,12 +27,64 @@ import { useDrafts, Draft } from "@/app/lib/hooks/useDrafts";
 import { Eye, EyeOff, Send, Loader2, CloudDownload } from "lucide-react";
 import { cn } from "@/app/lib/utils/cn";
 import apiClient from "@/app/lib/api/client";
-import { getErrorMessage } from "@/app/lib/utils/errorHandler";
 import { useGlobalToast } from "@/app/components/common/Toast";
 
 interface EnhancedConfessionFormProps {
   onSubmit?: (data: ConfessionFormData & { stellarTxHash?: string }) => void;
   className?: string;
+}
+
+const TITLE_HINT_ID = "confession-title-hint";
+const BODY_HINT_ID = "confession-body-hint";
+const TITLE_ERROR_ID = "title-error";
+const BODY_ERROR_ID = "body-error";
+
+function getSafeSubmissionErrorMessage(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+
+    if (status === 400 || status === 422) {
+      return "Please review the highlighted fields and try again.";
+    }
+
+    if (status === 429) {
+      return "You are submitting too quickly. Please wait a moment and try again.";
+    }
+
+    if (status === 503) {
+      return "Publishing is temporarily unavailable. Please try again later.";
+    }
+
+    if (status && status >= 500) {
+      return "We could not publish your confession right now. Please try again later.";
+    }
+
+    if (!error.response) {
+      return "We could not reach the server. Check your connection and try again.";
+    }
+  }
+
+  return "We could not publish your confession right now. Please try again.";
+}
+
+function getAnchorFailureMessage(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+
+    if (status === 429) {
+      return "The Stellar network is busy right now. Please wait a moment and try again.";
+    }
+
+    if (status && status >= 500) {
+      return "Unable to anchor this confession right now. Please try again later.";
+    }
+
+    if (!error.response) {
+      return "Unable to reach Stellar right now. Check your connection and try again.";
+    }
+  }
+
+  return "Unable to anchor this confession right now. Please try again.";
 }
 
 export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
@@ -56,11 +109,41 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
     scheduledFor?: string;
     updatedAt?: string;
   } | null>(null);
+  const submitSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { anchor } = useStellarWallet();
   const toast = useGlobalToast();
   const { drafts } = useDrafts();
+  const currentValidationErrors = validateConfessionForm({
+    title,
+    body,
+    gender,
+    enableStellarAnchor,
+  });
+  const hasValidationErrors = Object.keys(currentValidationErrors).length > 0;
+
+  const resetComposerState = useCallback(() => {
+    setTitle("");
+    setBody("");
+    setGender(undefined);
+    setEnableStellarAnchor(false);
+    setErrors({});
+    setSubmitError(null);
+    setSubmitSuccess(false);
+    setStellarTxHash(null);
+    setIsPreviewMode(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (submitSuccessTimerRef.current) {
+        clearTimeout(submitSuccessTimerRef.current);
+      }
+    };
+  }, []);
 
   const checkForNewerDrafts = useCallback(async () => {
     try {
@@ -110,17 +193,14 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
 
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
-      const validationErrors = validateConfessionForm({
-        title,
-        body,
-        gender,
-        enableStellarAnchor,
-      });
-      if (Object.keys(validationErrors).length < Object.keys(errors).length) {
-        setErrors(validationErrors);
+      if (
+        Object.keys(currentValidationErrors).length <
+        Object.keys(errors).length
+      ) {
+        setErrors(currentValidationErrors);
       }
     }
-  }, [title, body, gender, enableStellarAnchor, errors]);
+  }, [currentValidationErrors, errors]);
 
   const handleLoadDraft = (draft: Draft) => {
     setTitle(draft.title || "");
@@ -151,15 +231,9 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
     setSubmitError(null);
     setSubmitSuccess(false);
 
-    const validationErrors = validateConfessionForm({
-      title,
-      body,
-      gender,
-      enableStellarAnchor,
-    });
-
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
+    if (hasValidationErrors) {
+      setErrors(currentValidationErrors);
+      setSubmitError("Please review the highlighted fields and try again.");
       return;
     }
 
@@ -174,10 +248,7 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
           txHash = anchorResult.txHash;
           setStellarTxHash(txHash);
         } else {
-          setSubmitError(
-            anchorResult.error || "Failed to anchor confession on Stellar"
-          );
-          setIsSubmitting(false);
+          setSubmitError(getAnchorFailureMessage(anchorResult.error));
           return;
         }
       }
@@ -207,14 +278,20 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
       setBody("");
       setGender(undefined);
       setEnableStellarAnchor(false);
+      setErrors({});
+      setSubmitError(null);
       setStellarTxHash(null);
+      setIsPreviewMode(false);
 
-      setTimeout(() => {
+      if (submitSuccessTimerRef.current) {
+        clearTimeout(submitSuccessTimerRef.current);
+      }
+
+      submitSuccessTimerRef.current = setTimeout(() => {
         setSubmitSuccess(false);
-        setIsPreviewMode(false);
       }, 2000);
     } catch (error) {
-      const errorMessage = getErrorMessage(error);
+      const errorMessage = getSafeSubmissionErrorMessage(error);
       setSubmitError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -295,6 +372,9 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
             >
               Title <span className="text-[var(--secondary)]">(optional)</span>
             </label>
+            <p id={TITLE_HINT_ID} className="mb-2 text-xs text-[var(--secondary)]">
+              Optional. Keep it under 200 characters.
+            </p>
             <Input
               id="confession-title"
               type="text"
@@ -303,12 +383,12 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
               onChange={(e) => setTitle(e.target.value)}
               error={!!errors.title}
               maxLength={200}
-              aria-describedby={errors.title ? "title-error" : "title-counter"}
-              aria-required="true"
+              aria-describedby={`${TITLE_HINT_ID}${errors.title ? ` ${TITLE_ERROR_ID}` : ""} title-counter`}
+              aria-required="false"
             />
             <div className="mt-2 flex items-center justify-between">
               {errors.title ? (
-                <p id="title-error" className="text-xs text-red-500" role="alert">
+                <p id={TITLE_ERROR_ID} className="text-xs text-red-500" role="alert">
                   {errors.title}
                 </p>
               ) : (
@@ -365,6 +445,12 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
               <PreviewPanel title={title} body={body} />
             ) : (
               <>
+                <p
+                  id={BODY_HINT_ID}
+                  className="mb-2 text-xs leading-6 text-[var(--secondary)]"
+                >
+                  Minimum 10 characters. Markdown formatting is supported.
+                </p>
                 <div className="rounded-[22px] border border-[var(--border)] bg-[var(--surface-muted)] p-2">
                   <FormattingToolbar
                     textareaRef={textareaRef}
@@ -377,6 +463,7 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   placeholder="Share your thoughts, feelings, or experiences..."
+                  aria-invalid={!!errors.body}
                   className={cn(
                     "mt-3 flex min-h-[260px] w-full resize-y rounded-[28px] border px-5 py-5 text-[15px] leading-8 text-[var(--foreground)] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]",
                     "bg-[linear-gradient(180deg,var(--surface-strong),var(--surface-muted))]",
@@ -386,12 +473,12 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
                       : "border-[var(--border)] focus-visible:border-[var(--primary)]"
                   )}
                   maxLength={5000}
-                  aria-describedby={errors.body ? "body-error" : "body-counter"}
+                  aria-describedby={`${BODY_HINT_ID}${errors.body ? ` ${BODY_ERROR_ID}` : ""} body-counter`}
                   aria-required="true"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   {errors.body ? (
-                    <p id="body-error" className="text-xs text-red-500" role="alert">
+                    <p id={BODY_ERROR_ID} className="text-xs text-red-500" role="alert">
                       {errors.body}
                     </p>
                   ) : (
@@ -450,6 +537,7 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
             <div
               className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3"
               role="alert"
+              aria-live="assertive"
             >
               <p className="text-sm text-red-700">{submitError}</p>
             </div>
@@ -471,15 +559,10 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
               type="button"
               variant="ghost"
               onClick={() => {
-                setTitle("");
-                setBody("");
-                setGender(undefined);
-                setEnableStellarAnchor(false);
-                setErrors({});
-                setSubmitError(null);
-                setSubmitSuccess(false);
-                setStellarTxHash(null);
-                setIsPreviewMode(false);
+                if (submitSuccessTimerRef.current) {
+                  clearTimeout(submitSuccessTimerRef.current);
+                }
+                resetComposerState();
               }}
               disabled={isSubmitting}
               className="min-h-[44px]"
@@ -488,13 +571,14 @@ export const EnhancedConfessionForm: React.FC<EnhancedConfessionFormProps> = ({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !!errors.body || body.trim().length < 10}
+              disabled={isSubmitting || hasValidationErrors}
+              aria-busy={isSubmitting}
               className="min-h-[48px] min-w-[160px]"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Publishing...
+                  Publishing confession...
                 </>
               ) : (
                 <>

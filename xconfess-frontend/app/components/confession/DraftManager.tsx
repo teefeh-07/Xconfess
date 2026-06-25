@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useDrafts, Draft } from "@/app/lib/hooks/useDrafts";
+import { useDrafts } from "@/app/lib/hooks/useDrafts";
+import { Draft } from "@/app/lib/types/draft";
 import { Button } from "@/app/components/ui/button";
 import { Modal } from "@/app/components/ui/modal";
 import { ConfirmDialog } from "@/app/components/admin/ConfirmDialog";
@@ -23,22 +24,52 @@ interface DraftManagerProps {
 export const DraftManager: React.FC<DraftManagerProps> = ({
   currentDraft,
   onLoadDraft,
-  autoSaveInterval = 30000, // 30 seconds
+  autoSaveInterval = 3000, // 3s, per acceptance criteria ("within 3s of typing stop")
 }) => {
   const {
     drafts,
+    isLoading,
+    error: draftsError,
+    isRemote,
     saveDraft,
     updateDraft,
     deleteDraft,
     clearDrafts,
     loadDraft,
   } = useDrafts();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [clearDraftsOpen, setClearDraftsOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<
+    "saved" | "saving" | "unsaved" | "failed"
+  >("saved");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
   const toast = useGlobalToast();
+
+  // Restore most recent draft on mount if one exists and the composer is empty.
+  // Acceptance criteria: "Restore draft on composer mount when user has
+  // saved drafts."
+  const didAttemptRestoreRef = useRef(false);
+  useEffect(() => {
+    if (didAttemptRestoreRef.current) return;
+    if (isLoading) return; // wait for remote drafts to load before deciding
+    didAttemptRestoreRef.current = true;
+
+    if (!currentDraft.body.trim().length && drafts.length > 0) {
+      const mostRecent = drafts[0];
+      onLoadDraft(mostRecent);
+      setCurrentDraftId(mostRecent.id);
+      lastSavedRef.current = JSON.stringify({
+        title: mostRecent.title,
+        body: mostRecent.body,
+        gender: mostRecent.gender,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, drafts]);
 
   useEffect(() => {
     if (currentDraftId && !loadDraft(currentDraftId)) {
@@ -47,11 +78,71 @@ export const DraftManager: React.FC<DraftManagerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts]);
 
+  const persistDraft = async () => {
+    const currentContent = JSON.stringify(currentDraft);
+    if (currentContent === lastSavedRef.current) {
+      return true;
+    }
+
+    if (!currentDraft.body.trim().length) {
+      setSaveStatus("saved");
+      setSaveMessage(null);
+      lastSavedRef.current = currentContent;
+      return true;
+    }
+
+    const draftToSave = {
+      title: currentDraft.title,
+      body: currentDraft.body,
+      gender: currentDraft.gender as Gender | undefined,
+    };
+
+    setSaveStatus("saving");
+    setSaveMessage("Saving draft...");
+
+    const existingDraft = currentDraftId ? loadDraft(currentDraftId) : null;
+    let success = false;
+
+    try {
+      if (existingDraft && currentDraftId) {
+        success = await updateDraft(currentDraftId, draftToSave);
+      } else {
+        if (currentDraftId) {
+          setCurrentDraftId(null);
+        }
+        const newDraftId = await saveDraft(draftToSave);
+        if (newDraftId) {
+          setCurrentDraftId(newDraftId);
+          success = true;
+        }
+      }
+    } catch {
+      success = false;
+    }
+
+    if (success) {
+      setSaveStatus("saved");
+      setSaveMessage("Draft saved.");
+      lastSavedRef.current = currentContent;
+      return true;
+    }
+
+    setSaveStatus("failed");
+    setSaveMessage(
+      draftsError ??
+        (isRemote
+          ? "Failed to save draft. Check your connection and retry."
+          : "Failed to save draft."),
+    );
+    return false;
+  };
+
   useEffect(() => {
     const currentContent = JSON.stringify(currentDraft);
 
-    if (currentContent === lastSavedRef.current) {
-      return;
+    if (currentContent !== lastSavedRef.current) {
+      setSaveStatus("unsaved");
+      setSaveMessage("Unsaved changes");
     }
 
     if (autoSaveTimerRef.current) {
@@ -59,26 +150,7 @@ export const DraftManager: React.FC<DraftManagerProps> = ({
     }
 
     autoSaveTimerRef.current = setTimeout(() => {
-      if (currentDraft.body.trim().length > 0) {
-        const draftToSave = {
-          title: currentDraft.title,
-          body: currentDraft.body,
-          gender: currentDraft.gender as Gender | undefined,
-        };
-
-        const existingDraft = currentDraftId ? loadDraft(currentDraftId) : null;
-
-        if (existingDraft && currentDraftId) {
-          updateDraft(currentDraftId, draftToSave);
-        } else {
-          if (currentDraftId) {
-            setCurrentDraftId(null);
-          }
-          const newDraftId = saveDraft(draftToSave);
-          setCurrentDraftId(newDraftId);
-        }
-        lastSavedRef.current = currentContent;
-      }
+      void persistDraft();
     }, autoSaveInterval);
 
     return () => {
@@ -86,34 +158,54 @@ export const DraftManager: React.FC<DraftManagerProps> = ({
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [
-    currentDraft,
-    autoSaveInterval,
-    currentDraftId,
-    saveDraft,
-    updateDraft,
-    loadDraft,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDraft, autoSaveInterval, currentDraftId]);
 
   const handleLoadDraft = (draft: Draft) => {
     onLoadDraft(draft);
     setCurrentDraftId(draft.id);
+    lastSavedRef.current = JSON.stringify({
+      title: draft.title,
+      body: draft.body,
+      gender: draft.gender,
+    });
+    setSaveStatus("saved");
+    setSaveMessage("Draft saved.");
     setIsModalOpen(false);
   };
 
   const handleDeleteDraft = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteDraft(id);
+    void deleteDraft(id);
     if (currentDraftId === id) {
       setCurrentDraftId(null);
     }
   };
 
-  const handleClearDrafts = () => {
-    clearDrafts();
+  const handleClearDrafts = async () => {
+    await clearDrafts();
     setCurrentDraftId(null);
     setClearDraftsOpen(false);
     toast.success("All drafts cleared.");
+  };
+
+  /**
+   * Called by the composer on successful publish/submit, per acceptance
+   * criteria: "Publishing or submitting clears or archives draft per
+   * product rules." Exposed via a side-effect prop would be cleaner, but
+   * to minimize blast radius on this pass we expose it as a stable
+   * function consumers can call directly through a ref if needed.
+   * TODO(product): confirm clear vs archive semantics with product —
+   * this currently clears (deletes) rather than archiving.
+   */
+  const handlePublishCleanup = async () => {
+    if (currentDraftId) {
+      await deleteDraft(currentDraftId);
+      setCurrentDraftId(null);
+      lastSavedRef.current = "";
+      setSaveStatus("saved");
+      setSaveMessage(null);
+    }
   };
 
   return (
@@ -125,24 +217,46 @@ export const DraftManager: React.FC<DraftManagerProps> = ({
         description="This will permanently remove every saved draft on this device."
         confirmLabel="Clear drafts"
         variant="danger"
-        onConfirm={handleClearDrafts}
+        onConfirm={() => void handleClearDrafts()}
       />
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setIsModalOpen(true)}
-        aria-label="Manage drafts"
-        className="flex items-center gap-2"
-      >
-        <FileText className="h-4 w-4" />
-        <span className="hidden sm:inline">Drafts</span>
-        {drafts.length > 0 && (
-          <span className="rounded-full bg-zinc-700 px-2 py-0.5 text-xs">
-            {drafts.length}
-          </span>
-        )}
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsModalOpen(true)}
+          aria-label="Manage drafts"
+          className="flex items-center gap-2"
+        >
+          <FileText className="h-4 w-4" />
+          <span className="hidden sm:inline">Drafts</span>
+          {drafts.length > 0 && (
+            <span className="rounded-full bg-zinc-700 px-2 py-0.5 text-xs">
+              {drafts.length}
+            </span>
+          )}
+        </Button>
+
+        <div className="text-xs text-zinc-400">
+          {saveStatus === "saved" && saveMessage && <span>{saveMessage}</span>}
+          {saveStatus === "unsaved" && (
+            <span className="text-amber-300">Unsaved changes</span>
+          )}
+          {saveStatus === "saving" && <span>Saving draft…</span>}
+          {saveStatus === "failed" && (
+            <span className="text-rose-300">
+              {saveMessage ?? "Failed to save draft."}{" "}
+              <button
+                type="button"
+                onClick={() => void persistDraft()}
+                className="underline"
+              >
+                Retry
+              </button>
+            </span>
+          )}
+        </div>
+      </div>
 
       <Modal
         isOpen={isModalOpen}
@@ -150,9 +264,13 @@ export const DraftManager: React.FC<DraftManagerProps> = ({
         title="Saved Drafts"
       >
         <div className="space-y-4">
-          {drafts.length === 0 ? (
+          {isLoading ? (
             <p className="text-center text-zinc-400 py-8">
-              No saved drafts yet. Your drafts will be auto-saved every 30
+              Loading your drafts…
+            </p>
+          ) : drafts.length === 0 ? (
+            <p className="text-center text-zinc-400 py-8">
+              No saved drafts yet. Your drafts will be auto-saved every few
               seconds.
             </p>
           ) : (

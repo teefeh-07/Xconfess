@@ -26,6 +26,7 @@ describe('AdminController', () => {
     banUser: jest.fn(),
     unbanUser: jest.fn(),
     getAnalytics: jest.fn(),
+    getObservability: jest.fn(),
   };
 
   const mockModerationService = {
@@ -208,6 +209,31 @@ describe('AdminController', () => {
       const res = await controller.getAuditLogs();
       expect(res.total).toBe(1);
       expect(mockAuditLogService.findAll).toHaveBeenCalled();
+    });
+  });
+
+  describe('observability', () => {
+    it('getObservability returns aggregated audit and notification metrics', async () => {
+      const mockPayload = {
+        audit: {
+          totalLogs: 12,
+          actionTypeCounts: [{ actionType: 'REPORT_RESOLVED', count: 6 }],
+        },
+        notifications: {
+          main: { active: 2, waiting: 1, failed: 0 },
+          dlq: { failed: 0, waiting: 0, delayed: 0 },
+        },
+        generatedAt: '2026-06-01T00:00:00.000Z',
+      };
+      mockAdminService.getObservability.mockResolvedValue(mockPayload);
+
+      const res = await controller.getObservability('2026-05-01', '2026-05-31');
+
+      expect(res).toEqual(mockPayload);
+      expect(mockAdminService.getObservability).toHaveBeenCalledWith(
+        new Date('2026-05-01'),
+        new Date('2026-05-31'),
+      );
     });
   });
 

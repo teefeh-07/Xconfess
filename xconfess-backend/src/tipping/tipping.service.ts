@@ -280,13 +280,27 @@ export class TippingService {
   async verifyAndRecordTip(
     confessionId: string,
     dto: VerifyTipDto,
+    requestId?: string,
   ): Promise<TipVerificationResult> {
+    this.logger.log({
+      message: 'Tip verify started',
+      requestId,
+      confessionId,
+      txHash: dto.txId,
+    });
+
     // Check if confession exists
     const confession = await this.confessionRepository.findOne({
       where: { id: confessionId },
     });
 
     if (!confession) {
+      this.logger.warn({
+        message: 'Confession not found',
+        requestId,
+        confessionId,
+        txHash: dto.txId,
+      });
       throw new NotFoundException(
         `Confession with ID ${confessionId} not found`,
       );
@@ -301,10 +315,13 @@ export class TippingService {
     );
 
     if (existingIdempotentTip) {
-      // This exact request already completed - return canonical response
-      this.logger.debug(
-        `Idempotent replay detected for tip ${dto.txId} on confession ${confessionId}`,
-      );
+      this.logger.debug({
+        message: 'Idempotent replay detected',
+        requestId,
+        confessionId,
+        txHash: dto.txId,
+        tipId: existingIdempotentTip.id,
+      });
 
       return {
         tip: existingIdempotentTip,
@@ -319,10 +336,13 @@ export class TippingService {
     });
 
     if (tipByTxId && tipByTxId.confessionId !== confessionId) {
-      // Conflict: txId already used for a different confession
-      this.logger.warn(
-        `Conflict: txId ${dto.txId} attempted for confession ${confessionId} but already used for ${tipByTxId.confessionId}`,
-      );
+      this.logger.warn({
+        message: 'Conflict: txId already used for a different confession',
+        requestId,
+        confessionId,
+        txHash: dto.txId,
+        originalConfessionId: tipByTxId.confessionId,
+      });
 
       throw new ConflictException({
         message: `Transaction ${dto.txId} was already used for a different confession`,
@@ -355,9 +375,15 @@ export class TippingService {
 
     try {
       // Verify transaction on-chain
-      const isValid = await this.stellarService.verifyTransaction(dto.txId);
+      const isValid = await this.stellarService.verifyTransaction(dto.txId, requestId);
 
       if (!isValid) {
+        this.logger.warn({
+          message: 'Transaction not found or invalid on Stellar network',
+          requestId,
+          confessionId,
+          txHash: dto.txId,
+        });
         await this.updateRetryMetadata(dto.txId, 'not_found', {
           error: 'Transaction not found on chain',
           attemptedAt: new Date().toISOString(),
@@ -391,6 +417,15 @@ export class TippingService {
       });
 
       let savedTip: Tip;
+      const reconciliationMetadata = {
+        verifiedBy: 'user_request',
+        processedData: {
+          amount: processedData.amount,
+          senderAddress: processedData.senderAddress,
+        },
+        receiptMetadata: processedData.receiptMetadata,
+        idempotencyKey: idempotencyKey,
+      };
 
       if (existingTip) {
         // Update existing pending tip
@@ -402,14 +437,7 @@ export class TippingService {
         existingTip.verifiedAt = new Date();
         existingTip.lastChainStatus = 'verified';
         existingTip.lastCheckedAt = new Date();
-        existingTip.reconciliationMetadata = {
-          verifiedBy: 'user_request',
-          processedData: {
-            amount: processedData.amount,
-            senderAddress: processedData.senderAddress,
-          },
-          idempotencyKey: idempotencyKey,
-        };
+        existingTip.reconciliationMetadata = reconciliationMetadata;
         savedTip = await this.tipRepository.save(existingTip);
       } else {
         // Create new tip
@@ -424,20 +452,23 @@ export class TippingService {
           lastChainStatus: 'verified',
           lastCheckedAt: new Date(),
           retryCount: 0,
-          reconciliationMetadata: {
-            verifiedBy: 'user_request',
-            processedData: {
-              amount: processedData.amount,
-              senderAddress: processedData.senderAddress,
-            },
-            idempotencyKey: idempotencyKey,
-          },
+          reconciliationMetadata,
         });
         savedTip = await this.tipRepository.save(tip);
       }
 
       // Release lock after successful processing
       await this.releaseProcessingLock(dto.txId);
+
+      this.logger.log({
+        message: 'Tip verify succeeded',
+        requestId,
+        confessionId,
+        txHash: dto.txId,
+        tipId: savedTip.id,
+        amount: processedData.amount,
+        isNew: !existingTip,
+      });
 
       return {
         tip: savedTip,
@@ -484,9 +515,6 @@ export class TippingService {
       const senderAddress = receiptMetadata.anonymousSender
         ? null
         : paymentOp.from || null;
-
-      void receiptMetadata.settlementId;
-      void receiptMetadata.proofMetadata;
 
       return {
         amount,

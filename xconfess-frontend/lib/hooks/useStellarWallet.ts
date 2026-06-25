@@ -54,17 +54,18 @@ export function useStellarWallet() {
 
         if (result.error) {
           const stellarError = handleStellarError(result.error);
-          setAnchorError(stellarError.actionable || stellarError.message);
-          return { success: false, error: stellarError.message };
-        } else {
-          setAnchorError(null);
+          const userError = stellarError.actionable || stellarError.message;
+          setAnchorError(userError);
+          return { success: false, error: userError };
         }
 
+        setAnchorError(null);
         return result;
       } catch (error: unknown) {
         const stellarError = handleStellarError(error);
-        setAnchorError(stellarError.actionable || stellarError.message);
-        return { success: false, error: stellarError.message };
+        const userError = stellarError.actionable || stellarError.message;
+        setAnchorError(userError);
+        return { success: false, error: userError };
       }
     },
     [wallet],

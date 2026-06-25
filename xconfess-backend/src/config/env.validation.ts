@@ -58,6 +58,9 @@ export const envValidationSchema = Joi.object({
   }),
 
   // ── Stellar ───────────────────────────────────────────────────────────
+  STELLAR_FEATURES_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .default('false'),
   STELLAR_NETWORK: Joi.string().valid('testnet', 'mainnet').default('testnet'),
   STELLAR_HORIZON_URL: Joi.string()
     .uri()
@@ -65,6 +68,7 @@ export const envValidationSchema = Joi.object({
   STELLAR_SOROBAN_RPC_URL: Joi.string()
     .uri()
     .default('https://soroban-rpc-testnet.stellar.org'),
+  DEPLOYMENT_METADATA_PATH: Joi.string().optional(),
   CONFESSION_ANCHOR_CONTRACT_ID: Joi.string().optional(),
   REPUTATION_BADGES_CONTRACT_ID: Joi.string().optional(),
   TIPPING_SYSTEM_CONTRACT_ID: Joi.string().optional(),

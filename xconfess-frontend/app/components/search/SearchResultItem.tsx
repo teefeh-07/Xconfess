@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Eye, Heart, MessageSquare } from "lucide-react";
+import { Eye, Heart, MessageSquare, Anchor, ExternalLink } from "lucide-react";
 import type { SearchConfession } from "@/app/lib/types/search";
 import { cn } from "@/app/lib/utils/cn";
+import { getStellarExplorerUrl } from "@/app/lib/utils/stellar";
 
 interface SearchResultItemProps {
   confession: SearchConfession;
@@ -100,6 +101,7 @@ export function SearchResultItem({
 }: SearchResultItemProps) {
   const totalReactions =
     confession.reactions.like + confession.reactions.love;
+  const explorerUrl = getStellarExplorerUrl(confession.stellarTxHash);
 
   return (
     <Link
@@ -133,6 +135,24 @@ export function SearchResultItem({
             <Eye className="h-4 w-4" />
             {confession.viewCount}
           </span>
+        )}
+        {confession.isAnchored && (
+          <span className="inline-flex items-center gap-1 text-green-600">
+            <Anchor className="h-4 w-4" />
+            Anchored
+          </span>
+        )}
+        {explorerUrl && (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Explorer
+          </a>
         )}
       </div>
     </Link>

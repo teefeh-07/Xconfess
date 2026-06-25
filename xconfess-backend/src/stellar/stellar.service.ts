@@ -3,7 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSDK from '@stellar/stellar-sdk';
 import { StellarConfigService } from './stellar-config.service';
 import { TransactionBuilderService } from './transaction-builder.service';
+import { DeploymentMetadataService } from './services/deployment-metadata.service';
 import { ITransactionResult } from './interfaces/stellar-config.interface';
+import { StellarConfigResponseDto } from './dto/stellar-config-response.dto';
 import { AppException } from '../common/errors/app-exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { HttpStatus } from '@nestjs/common';
@@ -26,6 +28,7 @@ export class StellarService {
     private readonly configService: ConfigService,
     private stellarConfig: StellarConfigService,
     private txBuilder: TransactionBuilderService,
+    private deploymentMetadataService: DeploymentMetadataService,
   ) {
     this.contractId = this.configService.get<string>(
       'CONFESSION_ANCHOR_CONTRACT',
@@ -109,15 +112,30 @@ export class StellarService {
   }
 
   /**
-   * Get network configuration (safe for public exposure)
+   * Get network configuration (safe for public exposure; never includes secrets).
    */
-  getNetworkConfig() {
+  getNetworkConfig(): StellarConfigResponseDto {
     const config = this.stellarConfig.getConfig();
+    const metadataFreshness = this.deploymentMetadataService.getMetadataFreshness();
     return {
       network: config.network,
       horizonUrl: config.horizonUrl,
       sorobanRpcUrl: config.sorobanRpcUrl,
-      contractIds: config.contractIds,
+      contractIds: {
+        confessionAnchor: config.contractIds.confessionAnchor ?? null,
+        reputationBadges: config.contractIds.reputationBadges ?? null,
+        tippingSystem: config.contractIds.tippingSystem ?? null,
+      },
+      deploymentMetadata: {
+        loaded: !!this.deploymentMetadataService.getMetadata(),
+        generatedAtUtc: metadataFreshness.generatedAtUtc,
+        isStale: metadataFreshness.isStale,
+        ageDays:
+          metadataFreshness.daysSinceGeneration >= 0
+            ? metadataFreshness.daysSinceGeneration
+            : null,
+        loadError: this.deploymentMetadataService.getLoadError(),
+      },
     };
   }
 
@@ -198,7 +216,7 @@ export class StellarService {
   /**
    * Verify a transaction exists on the Stellar network
    */
-  async verifyTransaction(txHash: string): Promise<boolean> {
+  async verifyTransaction(txHash: string, requestId?: string): Promise<boolean> {
     if (!this.isValidTxHash(txHash)) {
       return false;
     }
@@ -213,7 +231,11 @@ export class StellarService {
       return data.successful === true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Error verifying Stellar transaction: ${message}`);
+      this.logger.error({
+        message: `Error verifying Stellar transaction: ${message}`,
+        requestId,
+        txHash,
+      });
       return false;
     }
   }

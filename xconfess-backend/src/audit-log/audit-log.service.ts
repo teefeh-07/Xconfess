@@ -55,7 +55,9 @@ export type ExportLifecycleAction =
   | 'request_created'
   | 'generation_completed'
   | 'link_refreshed'
-  | 'downloaded';
+  | 'downloaded'
+  | 'token_expired'
+  | 'export_expired';
 
 export type ExportActorType = AuditActorType;
 
@@ -442,6 +444,10 @@ export class AuditLogService {
         return AuditActionType.EXPORT_LINK_REFRESHED;
       case 'downloaded':
         return AuditActionType.EXPORT_DOWNLOADED;
+      case 'token_expired':
+        return AuditActionType.EXPORT_TOKEN_EXPIRED;
+      case 'export_expired':
+        return AuditActionType.EXPORT_EXPIRED;
       default:
         return AuditActionType.EXPORT_REQUEST_CREATED;
     }

@@ -42,7 +42,9 @@ export const useActivityStore = create<ActivityState>()(
 
       clearResolved: () =>
         set((state) => ({
-          activities: state.activities.filter((a) => a.status === "submitted"),
+          activities: state.activities.filter(
+            (a) => a.status === "requested" || a.status === "submitted",
+          ),
         })),
     }),
     {

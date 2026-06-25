@@ -5,6 +5,7 @@ import {
   ConflictException,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -69,6 +70,12 @@ export class DataExportService {
   ) {}
 
   async requestExport(userId: string) {
+    if (this.configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      throw new ServiceUnavailableException(
+        'Data export requires background job processing. Set ENABLE_BACKGROUND_JOBS=true and ensure Redis is available.',
+      );
+    }
+
     // 1a. Duplicate-submission guard: reject if a job is already PENDING or PROCESSING.
     const activeJob = await this.exportRepository.findOne({
       where: [
@@ -234,7 +241,7 @@ export class DataExportService {
    *
    * Returns false when any condition fails; callers should treat false as 403/410.
    */
-  async validateAndConsumeToken(
+ async validateAndConsumeToken(
     requestId: string,
     userId: string,
     token: string,
@@ -252,15 +259,46 @@ export class DataExportService {
 
     // Retention-window guard: export has exceeded its TTL.
     if (!this.isFileAvailable(record as Pick<ExportRequest, 'status' | 'createdAt'>)) {
-      // Mark the token as expired so cleanup jobs can tell it apart from unused tokens.
+      // Mark the token as expired and emit an audit event.
       await this.exportRepository.update(requestId, {
         downloadToken: null,
         expiredAt: new Date(),
       });
+
+      void this.auditLogService
+        ?.logExportLifecycleEvent({
+          action: 'token_expired',
+          actorType: 'user',
+          actorId: userId,
+          requestId,
+          exportId: requestId,
+          metadata: {
+            userId,
+            expiredAt: new Date().toISOString(),
+            reason: 'retention_window_elapsed',
+          },
+        })
+        .catch(() => undefined);
+
       return false;
     }
 
     await this.invalidateDownloadToken(requestId);
+
+    void this.auditLogService
+      ?.logExportLifecycleEvent({
+        action: 'downloaded',
+        actorType: 'user',
+        actorId: userId,
+        requestId,
+        exportId: requestId,
+        metadata: {
+          userId,
+          downloadedAt: new Date().toISOString(),
+        },
+      })
+      .catch(() => undefined);
+
     return true;
   }
 
@@ -287,7 +325,26 @@ export class DataExportService {
       .andWhere('createdAt < :cutoff', { cutoff })
       .execute();
 
-    return result.affected ?? 0;
+    const affected = result.affected ?? 0;
+
+    if (affected > 0) {
+      void this.auditLogService
+        ?.logExportLifecycleEvent({
+          action: 'export_expired',
+          actorType: 'system',
+          actorId: 'cleanup-scheduler',
+          requestId: 'batch',
+          exportId: 'batch',
+          metadata: {
+            affectedCount: affected,
+            cutoff: cutoff.toISOString(),
+            reason: 'scheduled_cleanup',
+          },
+        })
+        .catch(() => undefined);
+    }
+
+    return affected;
   }
 
   async getExportFile(requestId: string, userId: string) {

@@ -81,6 +81,26 @@ export interface Analytics {
   };
 }
 
+export interface AdminObservabilityResponse {
+  audit: {
+    totalLogs: number;
+    actionTypeCounts: Array<{ actionType: string; count: number }>;
+  };
+  notifications: {
+    main: {
+      active: number;
+      waiting: number;
+      failed: number;
+    };
+    dlq: {
+      failed: number;
+      waiting: number;
+      delayed: number;
+    };
+  };
+  generatedAt: string;
+}
+
 export const adminApi = {
   // Reports
   getReports: async (params?: {
@@ -175,16 +195,32 @@ export const adminApi = {
     return response.data;
   },
 
+  getObservability: async (startDate?: string, endDate?: string) => {
+    const response = await apiClient.get('/api/admin/observability', {
+      params: { startDate, endDate },
+    });
+    return response.data as AdminObservabilityResponse;
+  },
+
   // Audit Logs
   getAuditLogs: async (params?: {
     adminId?: number;
     action?: string;
     entityType?: string;
     entityId?: string;
+    requestId?: string;
+    startDate?: string;
+    endDate?: string;
     limit?: number;
     offset?: number;
   }) => {
-    const response = await apiClient.get('/api/admin/audit-logs', { params });
+    const response = await apiClient.get('/api/admin/audit-logs', {
+      params: {
+        ...params,
+        startDate: params?.startDate || undefined,
+        endDate: params?.endDate || undefined,
+      },
+    });
     return response.data;
   },
 
@@ -202,12 +238,12 @@ export const adminApi = {
       params.failedBefore = new Date(filter.endDate).toISOString();
     }
 
-    const response = await apiClient.get('/admin/notifications/dlq', { params });
+    const response = await apiClient.get('/api/admin/dlq', { params });
     return response.data;
   },
 
   replayFailedNotificationJob: async (jobId: string, reason?: string): Promise<ReplayJobResponse> => {
-    const response = await apiClient.post(`/admin/notifications/dlq/${jobId}/replay`, {
+    const response = await apiClient.post(`/api/admin/dlq/${jobId}/retry`, {
       reason,
     });
     return response.data;

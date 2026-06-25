@@ -10,7 +10,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
 import { WebSocketAdapter } from './websocket/websocket.adapter';
-import { configureRequestBodyParsing } from './common/request-body-limits';
+import { AppLogger } from './logger/logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -114,5 +114,23 @@ async function bootstrap() {
 
   const port = configService.get<number>('app.port', 3000);
   await app.listen(port);
+
+  // ── Startup Summary ────────────────────────────────────────────────────────
+  const logger = app.get(AppLogger);
+  const env = configService.get<string>('NODE_ENV', 'development');
+  const dbHost = configService.get<string>('DB_HOST', 'localhost');
+  const dbPort = configService.get<number>('DB_PORT', 55432);
+  const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
+  const redisPort = configService.get<number>('REDIS_PORT', 6379);
+  const backgroundJobMode = configService.get<string>('ENABLE_BACKGROUND_JOBS', 'false');
+  
+  logger.log(
+    `🚀 Application started successfully`,
+    'Bootstrap'
+  );
+  logger.log(
+    `Environment: ${env} | Port: ${port} | DB: ${dbHost}:${dbPort} | Redis: ${redisHost}:${redisPort} | Background Jobs: ${backgroundJobMode}`,
+    'Bootstrap'
+  );
 }
 bootstrap();

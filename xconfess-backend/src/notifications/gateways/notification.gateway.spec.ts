@@ -1,8 +1,9 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Socket } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../../auth/guards/ws-jwt.guard';
 import { WebSocketLogger } from '../../websocket/websocket.logger';
+import { buildWebSocketServerOptions } from '../../websocket/websocket.adapter';
 import { NotificationGateway } from './notification.gateway';
 
 describe('Notification websocket auth regression coverage', () => {
@@ -130,6 +131,55 @@ describe('Notification websocket auth regression coverage', () => {
     });
   });
 
+  it('rejects verified notification tokens without a subject claim', async () => {
+    const client = createSocket({
+      handshake: {
+        auth: { token: 'missing-sub-token' },
+        headers: {},
+      } as any,
+    });
+    const guard = createGuard({
+      verifyAsync: jest.fn().mockResolvedValue({ username: 'alice' }),
+    });
+
+    await expect(guard.canActivate(createWsContext(client))).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(client.data).toEqual({});
+  });
+
+  it('keeps notification namespace CORS scoped to the configured frontend origin', () => {
+    const { gateway } = createGateway();
+    const server = {
+      engine: { opts: {} },
+    } as unknown as Server;
+    (gateway as any).configService.get = jest.fn((key: string) =>
+      key === 'FRONTEND_URL' ? 'https://app.xconfess.example' : undefined,
+    );
+
+    gateway.afterInit(server);
+
+    expect(server.engine.opts.cors).toEqual({
+      origin: 'https://app.xconfess.example',
+      credentials: true,
+    });
+    expect(server.engine.opts.cors.origin).not.toBe(
+      'https://evil.example',
+    );
+  });
+
+  it('does not allow wrong origins in global websocket CORS options', () => {
+    const options = buildWebSocketServerOptions('https://app.xconfess.example');
+
+    expect(options.cors).toEqual({
+      origin: 'https://app.xconfess.example',
+      credentials: true,
+      methods: ['GET', 'POST'],
+    });
+    expect((options.cors as any).origin).not.toBe('*');
+    expect((options.cors as any).origin).not.toBe('https://evil.example');
+  });
+
   it('joins only the authenticated user notification room on connection', () => {
     const { gateway, wsLogger } = createGateway();
     const client = createSocket({
@@ -188,5 +238,22 @@ describe('Notification websocket auth regression coverage', () => {
       userId: 'user-1',
       channel: 'user:user-1',
     });
+  });
+
+  it('sends notification events only to the authenticated user room', async () => {
+    const { gateway } = createGateway();
+    const roomEmitter = { emit: jest.fn() };
+    gateway.server = {
+      to: jest.fn().mockReturnValue(roomEmitter),
+    } as any;
+    gateway.notificationService.getUserNotifications = jest
+      .fn()
+      .mockResolvedValue({ unreadCount: 3 });
+
+    await gateway.sendNotificationToUser('user-1', { id: 'notif-1' });
+
+    expect(gateway.server.to).toHaveBeenCalledWith('user:user-1');
+    expect(roomEmitter.emit).toHaveBeenCalledWith('new-notification', { id: 'notif-1' });
+    expect(roomEmitter.emit).toHaveBeenCalledWith('unread-count', { count: 3 });
   });
 });

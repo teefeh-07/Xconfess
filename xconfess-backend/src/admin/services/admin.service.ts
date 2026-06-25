@@ -65,6 +65,7 @@ export class AdminService {
     private readonly moderationTemplateService: ModerationTemplateService,
     private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly jobManagementService: JobManagementService,
   ) {}
 
   private get aesKey(): string {
@@ -769,6 +770,25 @@ export class AdminService {
         start,
         end,
       },
+    };
+  }
+
+  async getObservability(startDate?: Date, endDate?: Date) {
+    const [auditStats, diagnostics] = await Promise.all([
+      this.auditLogService.getStatistics(startDate, endDate),
+      this.jobManagementService.getDiagnostics(),
+    ]);
+
+    return {
+      audit: {
+        totalLogs: auditStats.totalLogs,
+        actionTypeCounts: auditStats.actionTypeCounts,
+      },
+      notifications: {
+        main: diagnostics.main,
+        dlq: diagnostics.dlq,
+      },
+      generatedAt: new Date().toISOString(),
     };
   }
 }

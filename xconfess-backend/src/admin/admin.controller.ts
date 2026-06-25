@@ -36,30 +36,51 @@ import { TemplateCategory } from '../comment/entities/moderation-note-template.e
 import { Request } from 'express';
 import { GetUser } from '../auth/get-user.decorator';
 import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
-import { IsString, IsEnum, IsOptional } from 'class-validator';
+import { StellarDiagnosticsService } from './services/stellar-diagnostics.service';
+import {
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsNotEmpty,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
-class CreateTemplateDto {
-  @IsString()
+export class CreateTemplateDto {
+  @IsNotEmpty({ message: 'Name is required' })
+  @IsString({ message: 'Name must be a string' })
+  @MinLength(1, { message: 'Name must not be empty' })
+  @MaxLength(100, { message: 'Name must be at most 100 characters' })
   name: string;
 
-  @IsString()
+  @IsNotEmpty({ message: 'Content is required' })
+  @IsString({ message: 'Content must be a string' })
+  @MinLength(1, { message: 'Content must not be empty' })
   content: string;
 
-  @IsEnum(TemplateCategory)
+  @IsNotEmpty({ message: 'Category is required' })
+  @IsEnum(TemplateCategory, {
+    message: 'Category must be a valid template category',
+  })
   category: TemplateCategory;
 }
 
-class UpdateTemplateDto {
+export class UpdateTemplateDto {
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Name must be a string' })
+  @MinLength(1, { message: 'Name must not be empty' })
+  @MaxLength(100, { message: 'Name must be at most 100 characters' })
   name?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Content must be a string' })
+  @MinLength(1, { message: 'Content must not be empty' })
   content?: string;
 
   @IsOptional()
-  @IsEnum(TemplateCategory)
+  @IsEnum(TemplateCategory, {
+    message: 'Category must be a valid template category',
+  })
   category?: TemplateCategory;
 
   @IsOptional()
@@ -92,15 +113,36 @@ export class AdminController {
     private readonly moderationService: ModerationService,
     private readonly moderationTemplateService: ModerationTemplateService,
     private readonly auditLogService: AuditLogService,
+    private readonly stellarDiagnosticsService: StellarDiagnosticsService,
   ) {}
 
   // Reports
   @Get('reports')
   @ApiOperation({ summary: 'List reports with optional filters' })
-  @ApiQuery({ name: 'status', required: false, enum: ReportStatus, description: 'Filter by status' })
-  @ApiQuery({ name: 'type', required: false, enum: ReportType, description: 'Filter by report type' })
-  @ApiQuery({ name: 'startDate', required: false, type: String, example: '2026-04-01' })
-  @ApiQuery({ name: 'endDate', required: false, type: String, example: '2026-04-30' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ReportStatus,
+    description: 'Filter by status',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: ReportType,
+    description: 'Filter by report type',
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: String,
+    example: '2026-04-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: String,
+    example: '2026-04-30',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 50 })
   @ApiQuery({ name: 'offset', required: false, type: Number, example: 0 })
   @ApiResponse({
@@ -108,7 +150,14 @@ export class AdminController {
     description: 'Paginated report list.',
     schema: {
       example: {
-        reports: [{ id: 'abc-123', confessionId: 'def-456', status: 'pending', type: 'spam' }],
+        reports: [
+          {
+            id: 'abc-123',
+            confessionId: 'def-456',
+            status: 'pending',
+            type: 'spam',
+          },
+        ],
         total: 1,
         limit: 50,
         offset: 0,
@@ -233,7 +282,11 @@ export class AdminController {
   @ApiOperation({ summary: 'Admin-delete a confession' })
   @ApiParam({ name: 'id', description: 'Confession UUID' })
   @ApiBody({ schema: { example: { reason: 'Violates community standards.' } } })
-  @ApiResponse({ status: 200, description: 'Confession deleted.', schema: { example: { message: 'Confession deleted successfully' } } })
+  @ApiResponse({
+    status: 200,
+    description: 'Confession deleted.',
+    schema: { example: { message: 'Confession deleted successfully' } },
+  })
   async deleteConfession(
     @Param('id') id: string,
     @Body() body: { reason?: string },
@@ -284,7 +337,12 @@ export class AdminController {
   @ApiResponse({
     status: 200,
     description: 'Matching users.',
-    schema: { example: { users: [{ id: 1, username: 'alice_42', role: 'user' }], total: 1 } },
+    schema: {
+      example: {
+        users: [{ id: 1, username: 'alice_42', role: 'user' }],
+        total: 1,
+      },
+    },
   })
   async searchUsers(
     @Query('q') query: string,
@@ -374,6 +432,45 @@ export class AdminController {
     await this.moderationTemplateService.delete(parseInt(id, 10));
   }
 
+  // Stellar diagnostics (Issue #1119)
+  @Get('stellar/diagnostics')
+  @ApiOperation({
+    summary: 'Stellar network and contract diagnostics with Horizon liveness ping',
+    description:
+      'Returns configured network, contract IDs, and a live Horizon reachability check. ' +
+      'Never exposes secrets. Horizon unreachable returns a degraded indicator, not a 500.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stellar diagnostics result',
+    schema: {
+      example: {
+        network: 'testnet',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        sorobanRpcUrl: 'https://soroban-rpc-testnet.stellar.org',
+        contractIds: {
+          confessionAnchor: 'CBFR2MDZBQPTNBIJCT32MTDDQLW2AQNDWNO777F3QT6ANYKTHETQZWD3',
+          reputationBadges: null,
+          tippingSystem: null,
+        },
+        horizonStatus: 'ok',
+        horizonLatencyMs: 142,
+        deploymentMetadata: {
+          loaded: true,
+          generatedAtUtc: '2026-05-21T12:34:56Z',
+          isStale: false,
+          ageDays: 7,
+          loadError: null,
+        },
+        checkedAt: '2026-06-20T10:00:00.000Z',
+      },
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required.' })
+  async getStellarDiagnostics() {
+    return this.stellarDiagnosticsService.getDiagnostics();
+  }
+
   // Operator anchor & tip lookup (Issue #778)
   @Get('lookup/anchor-tip')
   async lookupAnchorAndTip(
@@ -386,8 +483,18 @@ export class AdminController {
   // Analytics
   @Get('analytics')
   @ApiOperation({ summary: 'Get platform analytics (optionally date-bounded)' })
-  @ApiQuery({ name: 'startDate', required: false, type: String, example: '2026-04-01' })
-  @ApiQuery({ name: 'endDate', required: false, type: String, example: '2026-04-30' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: String,
+    example: '2026-04-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: String,
+    example: '2026-04-30',
+  })
   @ApiResponse({
     status: 200,
     description: 'Aggregated platform metrics.',
@@ -412,9 +519,21 @@ export class AdminController {
   // Audit Logs
   @Get('audit-logs')
   @ApiOperation({ summary: 'Query the admin audit log' })
-  @ApiQuery({ name: 'adminId', required: false, description: 'Filter by admin user ID' })
-  @ApiQuery({ name: 'action', required: false, description: 'Filter by action type' })
-  @ApiQuery({ name: 'entityType', required: false, description: 'Filter by entity type (e.g. confession, user)' })
+  @ApiQuery({
+    name: 'adminId',
+    required: false,
+    description: 'Filter by admin user ID',
+  })
+  @ApiQuery({
+    name: 'action',
+    required: false,
+    description: 'Filter by action type',
+  })
+  @ApiQuery({
+    name: 'entityType',
+    required: false,
+    description: 'Filter by entity type (e.g. confession, user)',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 100 })
   @ApiQuery({ name: 'offset', required: false, type: Number, example: 0 })
   @ApiResponse({
@@ -460,6 +579,50 @@ export class AdminController {
     });
 
     return result;
+  }
+
+  @Get('observability')
+  @ApiOperation({ summary: 'Get observability metrics for audit and notification health' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: String,
+    example: '2026-05-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: String,
+    example: '2026-05-31',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Aggregated observability metrics for admin review.',
+    schema: {
+      example: {
+        audit: {
+          totalLogs: 128,
+          actionTypeCounts: [
+            { actionType: 'REPORT_RESOLVED', count: 56 },
+            { actionType: 'USER_BANNED', count: 12 },
+          ],
+        },
+        notifications: {
+          main: { active: 5, waiting: 10, failed: 2 },
+          dlq: { failed: 2, waiting: 0, delayed: 0 },
+        },
+        generatedAt: '2026-06-01T12:00:00.000Z',
+      },
+    },
+  })
+  async getObservability(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const start = startDate ? new Date(startDate) : undefined;
+    const end = endDate ? new Date(endDate) : undefined;
+
+    return this.adminService.getObservability(start, end);
   }
 
   // Audit Logs by requestId (dedicated endpoint for incident reviews)

@@ -1,4 +1,5 @@
 export type ActivityStatus =
+  | "requested"
   | "submitted"
   | "confirmed"
   | "failed"

@@ -107,9 +107,29 @@ export default function ReportList() {
     );
   }
 
+
   const reports = data?.reports || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
+
+  const isFilterActive =
+    statusFilter !== 'all' || typeFilter !== 'all' || startDate !== '' || endDate !== '';
+
+  const statusClassMap: Record<string, string> = {
+    pending:
+      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
+    reviewing:
+      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100',
+    resolved:
+      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100',
+    dismissed:
+      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
+  };
+
+  const humanizeStatus = (s: string) => {
+    if (!s) return s;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
 
   if (selectedReport) {
     const report = reports.find((r: Report) => r.id === selectedReport);
@@ -125,11 +145,11 @@ export default function ReportList() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {confirmDialog}
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+      <div className="min-w-0 bg-white dark:bg-gray-800 shadow rounded-lg p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -201,7 +221,7 @@ export default function ReportList() {
               className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <ExportCsvButton
               onClick={() => {
                 const exportData: Record<string, unknown>[] = reports.map((r: Report) => ({
@@ -222,6 +242,7 @@ export default function ReportList() {
               }}
               isExporting={isExportingCsv}
               label="Export Reports CSV"
+              className="min-h-[44px]"
             />
             {selectedIds.size > 0 && (
               <Button
@@ -229,7 +250,7 @@ export default function ReportList() {
                 size="sm"
                 onClick={handleBulkResolve}
                 aria-label={`Resolve ${selectedIds.size} selected reports`}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm"
+                className="min-h-[44px] rounded-md bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
               >
                 Resolve Selected ({selectedIds.size})
               </Button>
@@ -239,9 +260,31 @@ export default function ReportList() {
       </div>
 
       {/* Reports Table */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      {/* Empty state when filters match nothing */}
+      {!isLoading && reports.length === 0 && isFilterActive ? (
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-8 text-center">
+          <p className="text-lg font-medium text-gray-900 dark:text-white">No reports match your filters</p>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Try clearing filters to see all reports.</p>
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => {
+                setStatusFilter('all');
+                setTypeFilter('all');
+                setStartDate('');
+                setEndDate('');
+                setPage(1);
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain">
+            <table className="min-w-[48rem] divide-y divide-gray-200 dark:divide-gray-700 md:min-w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -287,23 +330,15 @@ export default function ReportList() {
                       aria-label={`Select report ${report.id}`}
                       checked={selectedIds.has(report.id)}
                       onChange={() => toggleSelect(report.id)}
-                      className="rounded border-gray-300"
+                      className="min-h-[44px] min-w-[44px] rounded border-gray-300"
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                     {report.type}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        report.status === "pending"
-                          ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
-                          : report.status === "resolved"
-                            ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
-                            : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
-                      }`}
-                    >
-                      {report.status}
+                    <span className={statusClassMap[report.status] ?? statusClassMap['dismissed']}>
+                      {humanizeStatus(report.status)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -318,7 +353,7 @@ export default function ReportList() {
                       size="sm"
                       onClick={() => setSelectedReport(report.id)}
                       aria-label={`View report ${report.id}`}
-                      className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-0"
+                      className="min-h-[44px] min-w-[44px] rounded-md px-3 text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
                     >
                       View
                     </Button>
@@ -329,15 +364,16 @@ export default function ReportList() {
           </table>
         </div>
       </div>
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-700 dark:text-gray-300">
             Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)}{" "}
             of {total} results
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}

@@ -4,9 +4,15 @@ import { CommentService } from './comment.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { ModerationStatus } from './entities/moderation-comment.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditActionType } from '../audit-log/audit-log.entity';
 
 const mockCommentService = {
   moderateComment: jest.fn(),
+};
+
+const mockAuditLogService = {
+  log: jest.fn().mockResolvedValue(undefined),
 };
 
 /**
@@ -20,6 +26,7 @@ async function buildModule() {
     controllers: [CommentAdminController],
     providers: [
       { provide: CommentService, useValue: mockCommentService },
+      { provide: AuditLogService, useValue: mockAuditLogService },
     ],
   })
     .overrideGuard(JwtAuthGuard)
@@ -72,6 +79,34 @@ describe('CommentAdminController', () => {
       expect(typeof calledId).toBe('number');
       expect(calledId).toBe(7);
     });
+
+    it('creates an audit log row on successful approve', async () => {
+      const req = { user: { id: 1, role: 'admin' } } as any;
+      mockCommentService.moderateComment.mockResolvedValue({ success: true, message: '' });
+
+      await controller.approveComment('42', req);
+
+      expect(mockAuditLogService.log).toHaveBeenCalledTimes(1);
+      expect(mockAuditLogService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionType: AuditActionType.COMMENT_APPROVED,
+          metadata: expect.objectContaining({
+            commentId: '42',
+            entityType: 'comment',
+            entityId: '42',
+            status: ModerationStatus.APPROVED,
+          }),
+          context: expect.objectContaining({
+            userId: '1',
+            actor: expect.objectContaining({
+              type: 'admin',
+              id: '1',
+              userId: '1',
+            }),
+          }),
+        }),
+      );
+    });
   });
 
   describe('rejectComment() — POST /api/admin/comments/:id/reject', () => {
@@ -91,6 +126,34 @@ describe('CommentAdminController', () => {
         req.user,
       );
       expect(result.success).toBe(true);
+    });
+
+    it('creates an audit log row on successful reject', async () => {
+      const req = { user: { id: 2, role: 'admin' } } as any;
+      mockCommentService.moderateComment.mockResolvedValue({ success: true, message: '' });
+
+      await controller.rejectComment('15', req);
+
+      expect(mockAuditLogService.log).toHaveBeenCalledTimes(1);
+      expect(mockAuditLogService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionType: AuditActionType.COMMENT_REJECTED,
+          metadata: expect.objectContaining({
+            commentId: '15',
+            entityType: 'comment',
+            entityId: '15',
+            status: ModerationStatus.REJECTED,
+          }),
+          context: expect.objectContaining({
+            userId: '2',
+            actor: expect.objectContaining({
+              type: 'admin',
+              id: '2',
+              userId: '2',
+            }),
+          }),
+        }),
+      );
     });
   });
 

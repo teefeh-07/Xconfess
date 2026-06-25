@@ -20,7 +20,8 @@
     "test:cov": "jest --config ./jest.admin.config.js --coverage",
     "test:cov:all": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:websocket-fanout": "jest --config ./jest.config.js src/notifications/gateways/notification.gateway.load.spec.ts --runInBand"
   },
   "dependencies": {
     "@nestjs-modules/ioredis": "^2.0.2",
@@ -107,6 +108,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
     "ioredis-mock": "^8.13.1",
+    "jest": "^30.4.2",
     "socket.io-client": "^4.8.3",
     "sqlite3": "^5.1.7",
     "supertest": "^7.2.2",

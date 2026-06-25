@@ -13,6 +13,27 @@ jest.mock("@/app/lib/api/reactions", () => ({
   addReaction: jest.fn(),
 }));
 
+let mockSocketHandlers: Record<string, (...args: unknown[]) => void> = {};
+const mockSocket = {
+  on: jest.fn(),
+  emit: jest.fn(),
+  disconnect: jest.fn(),
+  io: {
+    on: jest.fn(),
+  },
+};
+const mockIo = jest.fn((..._args: unknown[]) => mockSocket);
+jest.mock("socket.io-client", () => ({
+  io: (...args: unknown[]) => mockIo(...args),
+}));
+jest.mock("@/app/lib/config", () => ({
+  getWsUrl: () => "ws://localhost:5000",
+}));
+
+function triggerSocketEvent(event: string, ...args: unknown[]) {
+  mockSocketHandlers[event]?.(...args);
+}
+
 // localStorage stub needed by the reactions API helper
 Object.defineProperty(window, "localStorage", {
   value: { getItem: jest.fn(() => "anon-user-1"), setItem: jest.fn(), removeItem: jest.fn() },
@@ -33,7 +54,16 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe("ReactionButton — optimistic count and active state", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    mockSocketHandlers = {};
+    jest.clearAllMocks();
+    mockIo.mockReturnValue(mockSocket);
+    mockSocket.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+      mockSocketHandlers[event] = handler;
+      return mockSocket;
+    });
+    mockSocket.io.on.mockReturnValue(mockSocket.io);
+  });
 
   it("shows the initial count from the prop", () => {
     mockAddReaction.mockReturnValue(new Promise(() => {}));
@@ -165,6 +195,27 @@ describe("ReactionButton — optimistic count and active state", () => {
     });
   });
 
+  it("shows rate limit error with retryAfter countdown", async () => {
+    mockAddReaction.mockResolvedValue({
+      ok: false,
+      error: { message: "Too many reactions", code: "TOO_MANY_REQUESTS", retryAfter: 45 },
+    });
+
+    render(
+      <Wrapper>
+        <ReactionButton type="like" count={2} confessionId="c-5" />
+      </Wrapper>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Too many reactions. Please wait 45s.");
+    });
+  });
+
   it("updates count and marks active on successful reaction", async () => {
     let resolve: (v: Awaited<ReturnType<typeof addReaction>>) => void;
     mockAddReaction.mockReturnValue(
@@ -182,7 +233,6 @@ describe("ReactionButton — optimistic count and active state", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button"));
     });
-
     // Optimistic update: count+1 and active
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByRole("button")).toHaveAttribute("aria-pressed", "true");
@@ -193,10 +243,29 @@ describe("ReactionButton — optimistic count and active state", () => {
         data: { success: true, reactions: { like: 5, love: 0 } },
       });
     });
-
     // Server confirms: count stays at 5
     await waitFor(() => {
       expect(screen.getByText("5")).toBeInTheDocument();
     });
+  });
+
+  it("reflects live websocket state in the reaction status indicator", async () => {
+    mockAddReaction.mockReturnValue(new Promise(() => {}));
+
+    render(
+      <Wrapper>
+        <ReactionButton type="like" count={5} confessionId="c-live" />
+      </Wrapper>,
+    );
+
+    await act(async () => {
+      triggerSocketEvent("connect");
+    });
+    expect(screen.getByLabelText("Reaction live status: connected")).toBeInTheDocument();
+
+    await act(async () => {
+      triggerSocketEvent("disconnect");
+    });
+    expect(screen.getByLabelText("Reaction live status: reconnecting")).toBeInTheDocument();
   });
 });

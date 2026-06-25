@@ -11,6 +11,8 @@ describe('DataCleanupService', () => {
   let service: DataCleanupService;
   let mockExportRepository: jest.Mocked<Repository<ExportRequest>>;
   let mockAuditLogService: { log: jest.Mock };
+  let loggerLogSpy: jest.SpyInstance;
+  let loggerErrorSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     mockExportRepository = {
@@ -38,7 +40,9 @@ describe('DataCleanupService', () => {
         },
         {
           provide: ConfigService,
-          useValue: { get: jest.fn((_key: string, fallback?: unknown) => fallback) },
+          useValue: {
+            get: jest.fn((_key: string, fallback?: unknown) => fallback),
+          },
         },
         {
           provide: AuditLogService,
@@ -48,6 +52,17 @@ describe('DataCleanupService', () => {
     }).compile();
 
     service = module.get<DataCleanupService>(DataCleanupService);
+    loggerLogSpy = jest
+      .spyOn((service as any).logger, 'log')
+      .mockImplementation(() => undefined);
+    loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    loggerLogSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
   });
 
   it('should be defined', () => {
@@ -128,6 +143,18 @@ describe('DataCleanupService', () => {
         }),
       );
       expect(mockUpdateResult.affected).toBe(12);
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Expired 12 export request(s)'),
+      );
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('eligibleCount=1'),
+      );
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('statusCounts={"READY":1}'),
+      );
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('requestIds=["export-1"]'),
+      );
     });
   });
 
@@ -303,6 +330,38 @@ describe('DataCleanupService', () => {
       expect(updateFields.status).toBe('EXPIRED');
       expect(updateFields.fileData).toBeNull();
     });
+
+    it('should not log exported file data or user secrets during cleanup', async () => {
+      mockExportRepository.find.mockResolvedValue([
+        {
+          id: 'export-secret-check',
+          userId: 'sensitive-user-id',
+          status: 'READY',
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          fileData: Buffer.from('secret exported file data'),
+          downloadToken: 'download-token-secret',
+        } as ExportRequest,
+      ]);
+      mockExportRepository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      await service.purgeOldExports();
+
+      const logOutput = [
+        ...loggerLogSpy.mock.calls,
+        ...loggerErrorSpy.mock.calls,
+      ]
+        .flat()
+        .join('\n');
+
+      expect(logOutput).toContain('requestIds=["export-secret-check"]');
+      expect(logOutput).not.toContain('sensitive-user-id');
+      expect(logOutput).not.toContain('secret exported file data');
+      expect(logOutput).not.toContain('download-token-secret');
+    });
   });
 
   // ── Integration with Export Lifecycle Tests ─────────────────────────────────
@@ -350,6 +409,32 @@ describe('DataCleanupService', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('Cleanup Observability', () => {
+    it('should include safe aggregate context when cleanup fails', async () => {
+      const dbError = new Error('Database connection failed');
+      mockExportRepository.update.mockRejectedValue(dbError);
+
+      await expect(service.purgeOldExports()).rejects.toThrow(
+        'Database connection failed',
+      );
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Export cleanup failed: Database connection failed',
+        ),
+      );
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('eligibleCount=1'),
+      );
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('requestIds=["export-1"]'),
+      );
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('statusCounts={"READY":1}'),
+      );
     });
   });
 });

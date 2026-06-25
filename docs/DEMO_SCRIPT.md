@@ -19,6 +19,7 @@ Before running through the demo, verify both services are reachable:
 ```
 
 The script checks:
+
 - Backend liveness at `GET /health/live`
 - Frontend root route returns HTML
 - Exits zero only when all checks pass
@@ -40,6 +41,8 @@ BACKEND_URL=http://localhost:5000 FRONTEND_URL=http://localhost:3000 ./scripts/s
   for sections 3-4.
 - Stellar testnet credentials are configured in `xconfess-backend/.env` if
   section 4 is demonstrated.
+- Local demo data has been prepared with
+  [`local-demo-data-seed-guide.md`](./local-demo-data-seed-guide.md).
 
 ---
 
@@ -55,10 +58,10 @@ BACKEND_URL=http://localhost:5000 FRONTEND_URL=http://localhost:3000 ./scripts/s
 
 ### Screenshots / Clips
 
-| # | What to capture                          |
-|---|------------------------------------------|
-| 1 | Composer form with a filled message      |
-| 2 | Feed showing the newly created confession|
+| #   | What to capture                           |
+| --- | ----------------------------------------- |
+| 1   | Composer form with a filled message       |
+| 2   | Feed showing the newly created confession |
 
 ---
 
@@ -74,12 +77,12 @@ BACKEND_URL=http://localhost:5000 FRONTEND_URL=http://localhost:3000 ./scripts/s
 
 ### Screenshots / Clips
 
-| # | What to capture                              |
-|---|----------------------------------------------|
-| 1 | Feed with visible reactions and comment count|
-| 2 | Comment thread below a confession            |
-| 3 | Search results for a keyword                 |
-| 4 | Confession detail page                       |
+| #   | What to capture                               |
+| --- | --------------------------------------------- |
+| 1   | Feed with visible reactions and comment count |
+| 2   | Comment thread below a confession             |
+| 3   | Search results for a keyword                  |
+| 4   | Confession detail page                        |
 
 ---
 
@@ -98,13 +101,13 @@ BACKEND_URL=http://localhost:5000 FRONTEND_URL=http://localhost:3000 ./scripts/s
 
 ### Screenshots / Clips
 
-| # | What to capture                                   |
-|---|---------------------------------------------------|
-| 1 | Report submission confirmation (user view)        |
-| 2 | Admin Reports page showing the pending report     |
-| 3 | Report detail with confession context             |
-| 4 | Report after resolution (status change)           |
-| 5 | Audit log entry for the resolution                |
+| #   | What to capture                               |
+| --- | --------------------------------------------- |
+| 1   | Report submission confirmation (user view)    |
+| 2   | Admin Reports page showing the pending report |
+| 3   | Report detail with confession context         |
+| 4   | Report after resolution (status change)       |
+| 5   | Audit log entry for the resolution            |
 
 ---
 
@@ -121,12 +124,12 @@ BACKEND_URL=http://localhost:5000 FRONTEND_URL=http://localhost:3000 ./scripts/s
 
 ### Screenshots / Clips
 
-| # | What to capture                                   |
-|---|---------------------------------------------------|
-| 1 | Confession detail before anchoring                |
-| 2 | Wallet connection / signing prompt                |
-| 3 | Confession detail after anchoring (success state) |
-| 4 | Optional: Stellar explorer URL for the transaction|
+| #   | What to capture                                    |
+| --- | -------------------------------------------------- |
+| 1   | Confession detail before anchoring                 |
+| 2   | Wallet connection / signing prompt                 |
+| 3   | Confession detail after anchoring (success state)  |
+| 4   | Optional: Stellar explorer URL for the transaction |
 
 ---
 

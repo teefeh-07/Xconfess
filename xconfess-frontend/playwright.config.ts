@@ -6,8 +6,15 @@ export default defineConfig({
   use: {
     headless: process.env.CI === 'true',
     baseURL: 'http://localhost:3000',
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
   projects: [
+    {
+      name: 'smoke',
+      testMatch: /public-pages-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
     {
       name: 'mobile-portrait',
       use: { ...devices['iPhone SE'] },
