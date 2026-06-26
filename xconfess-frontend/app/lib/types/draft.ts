@@ -31,11 +31,13 @@ export type DraftUpdate = Partial<Omit<Draft, "id" | "savedAt">>;
  */
 export interface DraftDTO {
   id: string;
-  title?: string;
-  body: string;
-  gender?: Gender;
-  savedAt: string; // ISO 8601
-  characterCount: number;
+  content: string;
+  category?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  savedAt?: string;
+  characterCount?: number;
   scheduledFor?: string;
   timezone?: string;
+  version?: number;
 }

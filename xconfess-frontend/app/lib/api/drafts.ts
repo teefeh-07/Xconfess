@@ -25,9 +25,25 @@ export class DraftApiError extends Error {
 }
 
 function toDraft(dto: DraftDTO): Draft {
+  const body = dto.content ?? "";
+  const savedAt = dto.updatedAt ?? dto.savedAt ?? dto.createdAt ?? new Date().toISOString();
   return {
-    ...dto,
-    savedAt: new Date(dto.savedAt).getTime(),
+    id: dto.id,
+    body,
+    gender: dto.category as Draft["gender"],
+    savedAt: new Date(savedAt).getTime(),
+    characterCount: dto.characterCount ?? body.length,
+    scheduledFor: dto.scheduledFor,
+    timezone: dto.timezone,
+  };
+}
+
+function toApiBody(draft: DraftInput | DraftUpdate) {
+  return {
+    content: draft.body,
+    category: draft.gender,
+    scheduledFor: "scheduledFor" in draft ? draft.scheduledFor : undefined,
+    timezone: "timezone" in draft ? draft.timezone : undefined,
   };
 }
 
@@ -65,7 +81,7 @@ export async function createDraft(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(draft),
+    body: JSON.stringify(toApiBody(draft)),
   });
   const data = (await parseJsonOrThrow(res)) as DraftDTO;
   return toDraft(data);
@@ -76,13 +92,13 @@ export async function patchDraft(
   id: string,
   updates: DraftUpdate,
 ): Promise<Draft> {
-  const res = await fetch(`/api/confessions/drafts/${id}`, {
+  const res = await fetch(`/api/confessions/drafts/${id}/autosave`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(updates),
+    body: JSON.stringify(toApiBody(updates)),
   });
   const data = (await parseJsonOrThrow(res)) as DraftDTO;
   return toDraft(data);

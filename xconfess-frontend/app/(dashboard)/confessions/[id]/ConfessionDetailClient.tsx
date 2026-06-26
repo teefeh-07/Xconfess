@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeft,
   ChevronRight,
@@ -11,6 +13,10 @@ import {
   AlertCircle,
   RefreshCw,
   FileQuestion,
+  Link2,
+  ShieldCheck,
+  ShieldQuestion,
+  Timer,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -35,6 +41,7 @@ interface ConfessionDetailClientProps {
     commentCount?: number;
     isAnchored?: boolean;
     stellarTxHash?: string | null;
+    anchorStatus?: "confirmed" | "pending" | "not_anchored";
   } | null; // Changed to allow null for explicit 404 tracking
   confessionId: string;
 }
@@ -227,6 +234,25 @@ export function ConfessionDetailClient({
   }
 
   const dateLabel = formatDate(new Date(confession.createdAt));
+  const anchorStatus =
+    confession.anchorStatus ??
+    (confession.isAnchored
+      ? "confirmed"
+      : confession.stellarTxHash
+        ? "pending"
+        : "not_anchored");
+  const AnchorIcon =
+    anchorStatus === "confirmed"
+      ? ShieldCheck
+      : anchorStatus === "pending"
+        ? Timer
+        : ShieldQuestion;
+  const anchorLabel =
+    anchorStatus === "confirmed"
+      ? "Verified on-chain"
+      : anchorStatus === "pending"
+        ? "Anchor pending"
+        : "Not anchored";
 
   // ==========================================
   // STATE 4: STANDARD RENDER DATA SUITE
@@ -278,12 +304,18 @@ export function ConfessionDetailClient({
                   {confession.viewCount} views
                 </span>
               )}
+              <span className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs dark:border-zinc-800">
+                <AnchorIcon className="h-3.5 w-3.5" />
+                {anchorLabel}
+              </span>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <p className="text-zinc-900 dark:text-white text-lg leading-relaxed whitespace-pre-wrap wrap-break-word overflow-wrap-anywhere">
-              {confession.content}
-            </p>
+            <div className="prose prose-zinc max-w-none text-zinc-900 dark:prose-invert dark:text-white prose-p:text-lg prose-p:leading-relaxed prose-a:break-all">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {confession.content}
+              </ReactMarkdown>
+            </div>
 
             {/* Reactions + Anchor + Share */}
             <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-4">
@@ -308,7 +340,15 @@ export function ConfessionDetailClient({
                   }}
                 />
               </div>
-              <ShareButton confessionId={confessionId} variant="dropdown" />
+              <div className="flex items-center gap-2">
+                {confession.stellarTxHash && (
+                  <span className="hidden items-center gap-1 text-xs text-zinc-500 sm:inline-flex">
+                    <Link2 className="h-3.5 w-3.5" />
+                    {confession.stellarTxHash.slice(0, 8)}...
+                  </span>
+                )}
+                <ShareButton confessionId={confessionId} variant="dropdown" />
+              </div>
             </div>
 
             {/* Comment count link */}

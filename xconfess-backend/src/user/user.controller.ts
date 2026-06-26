@@ -18,6 +18,7 @@ import {
   ForbiddenException,
   HttpException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UserService } from './user.service';
 import { AuthService } from '../auth/auth.service';
 import { User, UserRole } from './entities/user.entity';
@@ -90,6 +91,7 @@ export class UserController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiBody({ type: RegisterDto })
   @ApiResponse({
@@ -158,6 +160,7 @@ export class UserController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Log in (alternative endpoint for user login)' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
@@ -208,6 +211,20 @@ export class UserController {
       const message = error instanceof Error ? error.message : 'Unknown error';
       throw new BadRequestException('Failed to get profile: ' + message);
     }
+  }
+
+  @Get('profile/summary')
+  @UseGuards(JwtAuthGuard)
+  async getProfileSummary(
+    @GetUser('id') userId: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    return this.userService.getProfileSummary(
+      userId,
+      parseInt(page || '1', 10),
+      parseInt(limit || '10', 10),
+    );
   }
 
   @Post('deactivate')

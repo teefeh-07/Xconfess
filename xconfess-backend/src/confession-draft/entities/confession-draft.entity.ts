@@ -33,6 +33,9 @@ export class ConfessionDraft {
   @Column('text')
   content: string;
 
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  category: string | null;
+
   @Index()
   @Column({ name: 'scheduled_for', type: 'timestamptz', nullable: true })
   scheduledFor: Date | null;

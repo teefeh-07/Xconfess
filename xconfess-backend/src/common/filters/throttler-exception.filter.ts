@@ -1,10 +1,12 @@
-import { ExceptionFilter, Catch, ArgumentsHost } from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ThrottlerException } from '@nestjs/throttler';
 import { ErrorCode } from '../errors/error-codes';
 
 @Catch(ThrottlerException)
 export class ThrottlerExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(ThrottlerExceptionFilter.name);
+
   catch(exception: ThrottlerException, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -12,7 +14,12 @@ export class ThrottlerExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
 
     const responseData = exception.getResponse();
-    const retryAfter = this.extractRetryAfter(responseData);
+    const retryAfter = this.extractRetryAfter(responseData) ?? 60;
+    response.setHeader('Retry-After', retryAfter.toString());
+
+    this.logger.warn(
+      `Rate limit exceeded: ${request.method} ${request.url} from ${request.ip}`,
+    );
 
     response.status(status).json({
       status,

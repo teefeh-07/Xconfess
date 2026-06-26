@@ -31,6 +31,13 @@ async function getConfession(id: string) {
       commentCount: data.commentCount ?? 0,
       isAnchored: data.isAnchored ?? false,
       stellarTxHash: data.stellarTxHash ?? null,
+      anchorStatus:
+        data.anchorStatus ??
+        (data.isAnchored || data.is_anchored
+          ? "confirmed"
+          : data.stellarTxHash || data.stellar_tx_hash
+            ? "pending"
+            : "not_anchored"),
     };
   } catch (error) {
     console.error("Error fetching confession:", error);

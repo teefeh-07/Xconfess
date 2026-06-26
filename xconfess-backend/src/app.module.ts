@@ -49,8 +49,13 @@ import { BullModule } from '@nestjs/bullmq';
       useFactory: (config: ConfigService) => ({
         throttlers: [
           {
-            ttl: config.get<number>('throttle.ttl') || 900,
-            limit: config.get<number>('throttle.limit') || 100,
+            ttl: config.get<number>('throttle.ttl') || 60_000,
+            limit: config.get<number>('throttle.limit') || 60,
+          },
+          {
+            name: 'strict',
+            ttl: (config.get<number>('throttle.strictTtlSeconds') || 60) * 1000,
+            limit: config.get<number>('throttle.strictLimit') || 5,
           },
         ],
       }),

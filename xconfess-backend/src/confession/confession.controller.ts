@@ -13,6 +13,7 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import {
   ApiTags,
@@ -46,6 +47,7 @@ export class ConfessionController {
   ) {}
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Create a new anonymous confession' })
   @ApiBody({ type: CreateConfessionDto })
   @ApiResponse({
