@@ -93,7 +93,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api/v1', { exclude: ['api/health', 'api/health/live', 'api/health/ready'] });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -118,7 +118,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/api/messages')
+        .post('/api/v1/messages')
         .set('x-test-user', 'sender')
         .send({ confession_id: confessionId, content: 'Hello author!' })
         .expect(201);
@@ -130,7 +130,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
 
     it('should reject message with empty content', async () => {
       await request(app.getHttpServer())
-        .post('/api/messages')
+        .post('/api/v1/messages')
         .set('x-test-user', 'sender')
         .send({ confession_id: confessionId, content: '' })
         .expect(400);
@@ -138,14 +138,14 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
 
     it('should reject message without authentication', async () => {
       await request(app.getHttpServer())
-        .post('/api/messages')
+        .post('/api/v1/messages')
         .send({ confession_id: confessionId, content: 'No auth!' })
         .expect(403);
     });
 
     it('should reject malformed confession UUID', async () => {
       await request(app.getHttpServer())
-        .post('/api/messages')
+        .post('/api/v1/messages')
         .set('x-test-user', 'sender')
         .send({ confession_id: 'not-a-uuid', content: 'Hello author!' })
         .expect(400);
@@ -161,7 +161,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .post('/api/messages')
+        .post('/api/v1/messages')
         .set('x-test-user', 'author')
         .send({ confession_id: confessionId, content: 'Self message' })
         .expect(403);
@@ -181,7 +181,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/api/messages/reply')
+        .post('/api/v1/messages/reply')
         .set('x-test-user', 'author')
         .send({ message_id: messageId, reply: 'Thanks for reaching out!' })
         .expect(201);
@@ -196,7 +196,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .post('/api/messages/reply')
+        .post('/api/v1/messages/reply')
         .set('x-test-user', 'sender')
         .send({ message_id: messageId, reply: 'I am not the author' })
         .expect(403);
@@ -216,7 +216,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .post('/api/messages/reply')
+        .post('/api/v1/messages/reply')
         .set('x-test-user', 'author')
         .send({ message_id: messageId, reply: 'Duplicate reply attempt' })
         .expect(403);
@@ -240,7 +240,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       ]);
 
       const res = await request(app.getHttpServer())
-        .get('/api/messages')
+        .get('/api/v1/messages')
         .set('x-test-user', 'sender')
         .query({ confession_id: confessionId, sender_id: senderAnonId })
         .expect(200);
@@ -256,7 +256,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .get('/api/messages')
+        .get('/api/v1/messages')
         .set('x-test-user', 'outsider')
         .query({ confession_id: confessionId, sender_id: senderAnonId })
         .expect(403);
@@ -268,7 +268,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
 
     it('should reject malformed confession UUID in query', async () => {
       await request(app.getHttpServer())
-        .get('/api/messages')
+        .get('/api/v1/messages')
         .set('x-test-user', 'sender')
         .query({ confession_id: 'invalid-id', sender_id: senderAnonId })
         .expect(400);
@@ -292,7 +292,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
       ]);
 
       const res = await request(app.getHttpServer())
-        .get('/api/messages/threads')
+        .get('/api/v1/messages/threads')
         .set('x-test-user', 'author')
         .expect(200);
 
@@ -315,7 +315,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
   describe('POST /api/messages/reply – input validation', () => {
     it('should reject empty reply content', async () => {
       await request(app.getHttpServer())
-        .post('/api/messages/reply')
+        .post('/api/v1/messages/reply')
         .set('x-test-user', 'author')
         .send({ message_id: messageId, reply: '' })
         .expect(400);
@@ -323,7 +323,7 @@ describe('Message Flow E2E – Ownership & Reply Constraints', () => {
 
     it('should reject missing message_id', async () => {
       await request(app.getHttpServer())
-        .post('/api/messages/reply')
+        .post('/api/v1/messages/reply')
         .set('x-test-user', 'author')
         .send({ reply: 'Missing id' })
         .expect(400);

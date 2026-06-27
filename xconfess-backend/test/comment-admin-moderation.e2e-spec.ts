@@ -67,7 +67,7 @@ describe('Comment Admin Moderation RBAC (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api/v1', { exclude: ['api/health', 'api/health/live', 'api/health/ready'] });
     await app.init();
   });
 
@@ -78,13 +78,13 @@ describe('Comment Admin Moderation RBAC (e2e)', () => {
 
   it('rejects unauthenticated requests with 401', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/comments/1/approve')
+      .post('/api/v1/admin/comments/1/approve')
       .expect(401);
   });
 
   it('rejects authenticated non-admin users with 403 on approve', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/comments/1/approve')
+      .post('/api/v1/admin/comments/1/approve')
       .set('Authorization', 'Bearer user-token')
       .expect(403)
       .expect(({ body }) => {
@@ -94,7 +94,7 @@ describe('Comment Admin Moderation RBAC (e2e)', () => {
 
   it('rejects authenticated non-admin users with 403 on reject', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/comments/1/reject')
+      .post('/api/v1/admin/comments/1/reject')
       .set('Authorization', 'Bearer user-token')
       .expect(403)
       .expect(({ body }) => {
@@ -104,7 +104,7 @@ describe('Comment Admin Moderation RBAC (e2e)', () => {
 
   it('allows admins to approve a comment', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/comments/1/approve')
+      .post('/api/v1/admin/comments/1/approve')
       .set('Authorization', 'Bearer admin-token')
       .expect(200)
       .expect(({ body }) => {
@@ -120,7 +120,7 @@ describe('Comment Admin Moderation RBAC (e2e)', () => {
 
   it('allows admins to reject a comment', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/comments/1/reject')
+      .post('/api/v1/admin/comments/1/reject')
       .set('Authorization', 'Bearer admin-token')
       .expect(200)
       .expect(({ body }) => {

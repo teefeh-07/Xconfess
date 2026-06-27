@@ -6,18 +6,21 @@ import { NotificationItem } from "./NotificationItem";
 import { NotificationPreferences } from "./NotificationPreference";
 import { NotificationType } from "@/app/types/notifications";
 import { useNotifications } from "@/app/lib/hooks/useNotifications";
+import { useAuth } from "@/app/lib/hooks/useAuth";
 
 interface NotificationCenterProps {
   onClose?: () => void;
+  className?: string;
 }
 
-export function NotificationCenter({ onClose }: NotificationCenterProps) {
+export function NotificationCenter({ onClose, className }: NotificationCenterProps) {
   const [showPreferences, setShowPreferences] = useState(false);
   const [filterType, setFilterType] = useState<NotificationType | "all">("all");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
   // Get user ID from your auth context
-  const userId = "current-user-id"; // Replace with actual user ID
+  const { user } = useAuth();
+  const userId = user?.id || "current-user-id";
 
   const {
     notifications,
@@ -55,7 +58,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
 
   if (showPreferences) {
     return (
-      <div className="w-96 max-h-[600px] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden">
+      <div className={`w-96 max-h-[600px] bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden ${className || ""}`}>
         <NotificationPreferences
           onClose={() => setShowPreferences(false)}
           userId={userId}
@@ -65,7 +68,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
   }
 
   return (
-    <div className="w-96 max-h-[600px] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
+    <div className={`w-96 max-h-[600px] bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 flex flex-col overflow-hidden ${className || ""}`}>
       {/* Header */}
       <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-500 to-purple-600">
         <div className="flex items-center justify-between mb-3">

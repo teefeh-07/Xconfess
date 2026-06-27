@@ -11,6 +11,7 @@ import { Checkbox } from "@/app/components/ui/checkbox";
 import { useComparisonStore } from "@/app/lib/store/comparisonStore";
 import type { NormalizedConfession } from "../../lib/utils/normalizeConfession";
 import { getTipStats, type TipStats } from "@/lib/services/tipping.service";
+import { useReactions } from "@/app/lib/hooks/useReactions";
 
 interface Props {
   confession: NormalizedConfession;
@@ -25,6 +26,54 @@ export const ConfessionCard = memo(({ confession }: Props) => {
     confession.tipStats || null
   );
   const { addItem, removeItem, isSelected } = useComparisonStore();
+  const { addReaction } = useReactions({ confessionId: confession.id });
+
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+    setIsSwiping(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null || touchStartY === null) return;
+    const diffX = e.touches[0].clientX - touchStart;
+    const diffY = e.touches[0].clientY - touchStartY;
+    
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+      setIsSwiping(true);
+      setSwipeOffset(diffX);
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isSwiping || touchStart === null) {
+      setTouchStart(null);
+      setTouchStartY(null);
+      setSwipeOffset(0);
+      setIsSwiping(false);
+      return;
+    }
+
+    setTouchStart(null);
+    setTouchStartY(null);
+    setIsSwiping(false);
+
+    if (swipeOffset > 100) {
+      void addReaction(confession.id, "like");
+    } else if (swipeOffset < -100) {
+      void addReaction(confession.id, "love");
+    }
+    
+    setSwipeOffset(0);
+  };
 
   useEffect(() => {
     if (!tipStats) {
@@ -66,7 +115,30 @@ export const ConfessionCard = memo(({ confession }: Props) => {
   };
 
   return (
-    <article className="luxury-panel rounded-[30px] p-6 transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--surface-strong)]">
+    <div className="relative overflow-hidden rounded-[30px]">
+      {/* Swipe Background Indicator */}
+      {swipeOffset !== 0 && (
+        <div
+          className={`absolute inset-0 flex items-center px-8 text-white transition-colors duration-150 ${
+            swipeOffset > 0 ? "bg-emerald-500/20 justify-start" : "bg-pink-500/20 justify-end"
+          }`}
+        >
+          <span className="text-3xl animate-bounce">
+            {swipeOffset > 0 ? "👍" : "❤️"}
+          </span>
+        </div>
+      )}
+
+      <article
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: `translateX(${swipeOffset}px)`,
+          transition: isSwiping ? "none" : "transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+        className="luxury-panel rounded-[30px] p-6 transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--surface-strong)]"
+      >
       <div className="mb-5 flex items-center justify-between border-b border-[var(--border)] pb-4">
         <div className="flex items-center gap-3">
           {confession.author?.avatar ? (
@@ -171,5 +243,6 @@ export const ConfessionCard = memo(({ confession }: Props) => {
         </div>
       </div>
     </article>
+  </div>
   );
 });

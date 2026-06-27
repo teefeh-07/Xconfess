@@ -16,6 +16,14 @@ export const metadata: Metadata = {
   generator: "v0.app",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+};
+
 import { NetworkBanner } from "@/app/components/common/NetworkBanner";
 import { WebSocketIndicator } from "@/app/components/common/WebSocketIndicator";
 

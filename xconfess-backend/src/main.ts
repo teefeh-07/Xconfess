@@ -70,7 +70,26 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['api/health', 'api/health/live', 'api/health/ready'],
+  });
+
+  // Redirect old /api/... to /api/v1/...
+  app.use((req: any, res: any, next: any) => {
+    const rawPath = req.path || '';
+    if (
+      rawPath.startsWith('/api/') &&
+      !rawPath.startsWith('/api/v1/') &&
+      !rawPath.startsWith('/api/health')
+    ) {
+      if (rawPath === '/api/api-docs' || rawPath.startsWith('/api/api-docs/')) {
+        return res.redirect(301, '/api/v1/docs');
+      }
+      const redirectUrl = req.url.replace(/^\/api\//, '/api/v1/');
+      return res.redirect(301, redirectUrl);
+    }
+    next();
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -106,7 +125,7 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/api-docs', app, document);
+    SwaggerModule.setup('api/v1/docs', app, document);
   }
 
   const port = configService.get<number>('app.port', 3000);

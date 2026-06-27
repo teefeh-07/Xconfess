@@ -160,7 +160,7 @@ describe('Core Journey (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api/v1', { exclude: ['api/health', 'api/health/live', 'api/health/ready'] });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -181,7 +181,7 @@ describe('Core Journey (e2e)', () => {
 
   it('covers register -> login -> guarded route -> create confession -> fetch feed -> react', async () => {
     const registerResponse = await request(app.getHttpServer())
-      .post('/api/users/register')
+      .post('/api/v1/users/register')
       .send({
         username: 'core-journey-user',
         email: 'core-journey@example.com',
@@ -201,7 +201,7 @@ describe('Core Journey (e2e)', () => {
     );
 
     const loginResponse = await request(app.getHttpServer())
-      .post('/api/users/login')
+      .post('/api/v1/users/login')
       .send({
         email: 'core-journey@example.com',
         password: 'password123',
@@ -221,7 +221,7 @@ describe('Core Journey (e2e)', () => {
     );
 
     const guardedResponse = await request(app.getHttpServer())
-      .get('/api/auth/me')
+      .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${loginResponse.body.access_token}`)
       .expect(200);
 
@@ -234,7 +234,7 @@ describe('Core Journey (e2e)', () => {
     );
 
     const createConfessionResponse = await request(app.getHttpServer())
-      .post('/api/confessions')
+      .post('/api/v1/confessions')
       .send({
         title: 'Core journey',
         body: 'This is my core journey confession',
@@ -251,7 +251,7 @@ describe('Core Journey (e2e)', () => {
     );
 
     const feedResponse = await request(app.getHttpServer())
-      .get('/api/confessions')
+      .get('/api/v1/confessions')
       .query({ page: 1, limit: 10, sort: 'newest' })
       .expect(200);
 
@@ -268,7 +268,7 @@ describe('Core Journey (e2e)', () => {
     );
 
     const reactionResponse = await request(app.getHttpServer())
-      .post('/api/reactions')
+      .post('/api/v1/reactions')
       .send({
         confessionId,
         anonymousUserId: authorAnonId,

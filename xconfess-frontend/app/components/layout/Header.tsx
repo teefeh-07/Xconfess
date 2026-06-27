@@ -5,36 +5,19 @@ import { useState, useCallback, useRef } from "react";
 import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../lib/hooks/useAuth";
 import { ThemeToggle } from "../common/ThemeToggle";
-import Sidebar from "./Sidebar";
+import BottomNav from "./BottomNav";
 
 const navLinkClass =
   "rounded-full px-4 py-2.5 text-sm font-medium text-[var(--secondary)] transition-all duration-200 hover:bg-white/60 hover:text-[var(--foreground)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]";
 
 export default function Header() {
   const { user, logout } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-
-  const closeMobileMenu = useCallback(() => {
-    setMobileMenuOpen(false);
-    menuButtonRef.current?.focus();
-  }, []);
-
-  const handleNavKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Escape" && mobileMenuOpen) {
-        closeMobileMenu();
-      }
-    },
-    [mobileMenuOpen, closeMobileMenu],
-  );
 
   return (
     <>
       <header
         aria-label="Main navigation"
         className="sticky top-0 z-30 border-b border-[var(--border)] bg-[color:rgba(243,239,232,0.78)] backdrop-blur-xl"
-        onKeyDown={handleNavKeyDown}
       >
         <nav className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-6">
@@ -98,26 +81,12 @@ export default function Header() {
 
             <div className="flex items-center gap-4 md:hidden">
               <ThemeToggle />
-              <button
-                ref={menuButtonRef}
-                type="button"
-                className="-mr-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-[var(--secondary)] transition-colors hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] min-h-[44px] min-w-[44px]"
-                aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-                aria-expanded={mobileMenuOpen}
-                aria-controls="mobile-navigation"
-                onClick={() => setMobileMenuOpen(true)}
-              >
-                <Menu aria-hidden="true" size={24} />
-              </button>
             </div>
           </div>
         </nav>
       </header>
 
-      <Sidebar
-        isOpen={mobileMenuOpen}
-        onClose={closeMobileMenu}
-      />
+      <BottomNav />
     </>
   );
 }

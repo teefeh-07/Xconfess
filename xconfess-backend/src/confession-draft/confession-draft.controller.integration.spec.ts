@@ -67,7 +67,7 @@ describe('ConfessionDraftController (integration)', () => {
       .compile();
 
     app = module.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api/v1', { exclude: ['api/health', 'api/health/live', 'api/health/ready'] });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
   });
@@ -117,7 +117,7 @@ describe('ConfessionDraftController (integration)', () => {
 
   it('creates, lists, and publishes an authenticated user draft', async () => {
     const createResponse = await request(app.getHttpServer())
-      .post('/api/confessions/drafts')
+      .post('/api/v1/confessions/drafts')
       .set('Authorization', 'Bearer test-token')
       .send({ content: 'A private draft' })
       .expect(201);
@@ -132,7 +132,7 @@ describe('ConfessionDraftController (integration)', () => {
     expect(repo.count).toHaveBeenCalledWith({ where: { userId: USER_ID } });
 
     const listResponse = await request(app.getHttpServer())
-      .get('/api/confessions/drafts')
+      .get('/api/v1/confessions/drafts')
       .set('Authorization', 'Bearer test-token')
       .expect(200);
 
@@ -141,7 +141,7 @@ describe('ConfessionDraftController (integration)', () => {
     ]);
 
     const publishResponse = await request(app.getHttpServer())
-      .post('/api/confessions/drafts/draft-1/publish')
+      .post('/api/v1/confessions/drafts/draft-1/publish')
       .set('Authorization', 'Bearer test-token')
       .expect(201);
 

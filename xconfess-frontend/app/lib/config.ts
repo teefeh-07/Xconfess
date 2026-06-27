@@ -9,20 +9,18 @@ export const getApiBaseUrl = (): string => {
   if (typeof window === 'undefined') {
     const serverUrl = process.env.BACKEND_API_URL;
     if (!serverUrl) {
-      // During build time or if not provided, use a fallback to prevent crash
-      return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const clientUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      return clientUrl.includes('/api/v1') ? clientUrl : clientUrl.replace(/\/api\/?$/, '') + '/api/v1';
     }
-    return serverUrl;
+    return serverUrl.includes('/api/v1') ? serverUrl : serverUrl.replace(/\/api\/?$/, '') + '/api/v1';
   }
 
   // 2. Client-side check
   const clientUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!clientUrl) {
-    // We provide a fallback for client-side to prevent crash, 
-    // but ideally this should be provided in production.
-    return 'http://localhost:5000';
+    return 'http://localhost:5000/api/v1';
   }
-  return clientUrl;
+  return clientUrl.includes('/api/v1') ? clientUrl : clientUrl.replace(/\/api\/?$/, '') + '/api/v1';
 };
 
 /**
