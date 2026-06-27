@@ -29,7 +29,12 @@ export const envValidationSchema = Joi.object({
   DB_NAME: Joi.string().required().messages({
     'any.required': 'DB_NAME is required – set the PostgreSQL database name.',
   }),
+  DB_READ_HOST: Joi.string().optional(),
+  DB_READ_PORT: Joi.number().port().optional(),
   TYPEORM_SYNCHRONIZE: Joi.string()
+    .valid('true', 'false', '1', '0', 'yes', 'no', 'on', 'off')
+    .optional(),
+  TYPEORM_MIGRATIONS_RUN: Joi.string()
     .valid('true', 'false', '1', '0', 'yes', 'no', 'on', 'off')
     .optional(),
 
@@ -45,11 +50,19 @@ export const envValidationSchema = Joi.object({
   FRONTEND_URL: Joi.string().default('http://localhost:3000'),
 
   // ── Encryption ────────────────────────────────────────────────────────
-  CONFESSION_AES_KEY: Joi.string().length(32).optional().messages({
-    'string.length': 'CONFESSION_AES_KEY must be exactly 32 characters (AES-256).',
+  CONFESSION_ENCRYPTION_KEY: Joi.string().hex().length(64).required().messages({
+    'string.length':
+      'CONFESSION_ENCRYPTION_KEY must be exactly 64 characters (32-byte hex).',
+    'string.hex':
+      'CONFESSION_ENCRYPTION_KEY must be a valid hexadecimal string.',
+    'any.required':
+      'CONFESSION_ENCRYPTION_KEY is required for confession security.',
   }),
 
   // ── Stellar ───────────────────────────────────────────────────────────
+  STELLAR_FEATURES_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .default('false'),
   STELLAR_NETWORK: Joi.string().valid('testnet', 'mainnet').default('testnet'),
   STELLAR_HORIZON_URL: Joi.string()
     .uri()
@@ -57,10 +70,14 @@ export const envValidationSchema = Joi.object({
   STELLAR_SOROBAN_RPC_URL: Joi.string()
     .uri()
     .default('https://soroban-rpc-testnet.stellar.org'),
+  DEPLOYMENT_METADATA_PATH: Joi.string().optional(),
   CONFESSION_ANCHOR_CONTRACT_ID: Joi.string().optional(),
   REPUTATION_BADGES_CONTRACT_ID: Joi.string().optional(),
   TIPPING_SYSTEM_CONTRACT_ID: Joi.string().optional(),
   STELLAR_SERVER_SECRET: Joi.string().optional(),
+
+  // ── Tipping SLA ────────────────────────────────────────────────────────
+  TIP_VERIFICATION_STALE_THRESHOLD_MINUTES: Joi.number().min(1).default(30),
 
   // ── Email (primary) ──────────────────────────────────────────────────
   MAIL_HOST: Joi.string().default('smtp.ethereal.email'),
@@ -82,7 +99,9 @@ export const envValidationSchema = Joi.object({
 
   // ── Email templates / SLO ────────────────────────────────────────────
   EMAIL_WELCOME_CANARY_WEIGHT: Joi.number().min(0).max(100).default(0),
-  EMAIL_ROLLOUT_KILLSWITCH: Joi.string().valid('true', 'false').default('false'),
+  EMAIL_ROLLOUT_KILLSWITCH: Joi.string()
+    .valid('true', 'false')
+    .default('false'),
   EMAIL_TEMPLATE_SLO_WINDOW_MINUTES: Joi.number().default(15),
   EMAIL_TEMPLATE_SLO_ACTIVE_MAX_ERROR_RATE_PERCENT: Joi.number().default(5),
   EMAIL_TEMPLATE_SLO_ACTIVE_MAX_P95_LATENCY_MS: Joi.number().default(1200),
@@ -111,4 +130,13 @@ export const envValidationSchema = Joi.object({
   DLQ_RETENTION_DAYS: Joi.number().default(14),
   DLQ_CLEANUP_BATCH_SIZE: Joi.number().default(100),
   DLQ_CLEANUP_DRY_RUN: Joi.string().valid('true', 'false').default('false'),
+
+  // ── DLQ automatic replay (optional) ────────────────────────────────
+  DLQ_AUTO_REPLAY_ENABLED: Joi.string().valid('true', 'false').default('false'),
+  DLQ_AUTO_REPLAY_INTERVAL_MS: Joi.number().default(1800000), // 30 min
+  DLQ_AUTO_REPLAY_LOOKBACK_MINUTES: Joi.number().default(15),
+  DLQ_AUTO_REPLAY_MAX_JOBS_PER_RUN: Joi.number().default(50),
+
+  // ── Redis queue health ──────────────────────────────────────────────
+  REDIS_QUEUE_LATENCY_THRESHOLD_MS: Joi.number().default(250),
 }).options({ allowUnknown: true, abortEarly: false });

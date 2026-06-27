@@ -1,4 +1,3 @@
-// xconfess-backend/src/report/reports.service.ts
 import {
   Injectable,
   BadRequestException,
@@ -8,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Report, ReportStatus, ReportType } from '../admin/entities/report.entity';
+import { Report, ReportStatus, ReportType } from '../admin/entities/report.entity'
 import { CreateReportDto } from './dto/create-report.dto';
 import { ResolveReportDto } from './dto/resolve-report.dto';
 import { AnonymousConfession } from '../confession/entities/confession.entity';
@@ -18,7 +17,10 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { User, UserRole } from '../user/entities/user.entity';
 import { AnonymousUser } from '../user/entities/anonymous-user.entity';
 import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
-import { OutboxEvent, OutboxStatus } from '../common/entities/outbox-event.entity';
+import {
+  OutboxEvent,
+  OutboxStatus,
+} from '../common/entities/outbox-event.entity';
 
 export const DUPLICATE_REPORT_MESSAGE =
   'You have already reported this confession within the last 24 hours.';
@@ -48,7 +50,11 @@ export class ReportsService {
     confessionId: string,
     reporterId: number | null,
     dto: CreateReportDto,
-    context?: { ipAddress?: string; userAgent?: string },
+    context?: {
+      ipAddress?: string;
+      userAgent?: string;
+      anonymousUserId?: string;
+    },
     idempotencyKey?: string,
   ): Promise<Report> {
     // ── Idempotency replay ────────────────────────────────────────────────────
@@ -76,35 +82,58 @@ export class ReportsService {
 
       const confession = await confessionRepo.findOne({
         where: { id: confessionId },
-        relations: ['anonymousUser', 'anonymousUser.userLinks', 'anonymousUser.userLinks.user'],
+        relations: [
+          'anonymousUser',
+          'anonymousUser.userLinks',
+          'anonymousUser.userLinks.user',
+        ],
       });
 
       if (!confession) {
         throw new NotFoundException('Confession not found');
       }
 
-      // 2️⃣ Duplicate-report check (24-hour window, handles NULL reporterId)
+      // 2️⃣ Duplicate-report check (24-hour window)
       const qb = manager
         .getRepository(Report)
         .createQueryBuilder('report')
         .where('report.confessionId = :confessionId', { confessionId })
         .andWhere('report.createdAt > :since', { since });
 
-      if (reporterId === null) {
-        qb.andWhere('report.reporterId IS NULL');
-      } else {
+      if (reporterId !== null) {
         qb.andWhere('report.reporterId = :reporterId', { reporterId });
+      } else if (context?.anonymousUserId) {
+        qb.andWhere('report.anonymousReporterId = :anonymousReporterId', {
+          anonymousReporterId: context.anonymousUserId,
+        });
+      } else {
+        // Issue #1012: Anonymous reports MUST have an identity to enforce rate limits/deduplication
+        throw new BadRequestException(
+          'Anonymous reports require a valid anonymous identity',
+        );
       }
 
       const existingReport = await qb.getOne();
       if (existingReport) {
-        throw new BadRequestException(DUPLICATE_REPORT_MESSAGE);
+        // Return the existing report for idempotent replay rather than an error.
+        // This gives callers a deterministic response for retried submissions
+        // without creating duplicate moderation records.
+        this.logger.debug(
+          `Deduplicated report for confession ${confessionId} by ${
+            reporterId !== null
+              ? `reporter ${reporterId}`
+              : `anon ${context?.anonymousUserId ?? 'unknown'}`
+          } — returning existing report ${existingReport.id}`,
+        );
+        return existingReport;
       }
 
       // 3️⃣ Persist — DB unique index catches any concurrent duplicates
       const report = manager.getRepository(Report).create({
         confessionId,
         reporterId: reporterId ?? undefined,
+        anonymousReporterId:
+          reporterId === null ? context?.anonymousUserId : undefined,
         type: dto.type ?? ReportType.OTHER,
         reason: dto.reason ?? null,
         status: ReportStatus.PENDING,
@@ -117,8 +146,17 @@ export class ReportsService {
         savedReport = await reportRepo.save(report);
       } catch (err: unknown) {
         if (isDuplicateReportConstraintViolation(err)) {
-          // Could be the idempotency index or the dedupe index — both are safe
-          // to surface as the duplicate-report message to the caller.
+          // Concurrent duplicate hit the DB unique index — look up and return
+          // the winner row so the caller gets a deterministic response.
+          const concurrent = await reportRepo.findOne({
+            where: {
+              confessionId,
+              ...(idempotencyKey && reporterId !== null
+                ? { idempotencyKey, reporterId }
+                : {}),
+            },
+          });
+          if (concurrent) return concurrent;
           throw new BadRequestException(DUPLICATE_REPORT_MESSAGE);
         }
         throw err;
@@ -160,7 +198,9 @@ export class ReportsService {
             },
           )
           .catch((error) => {
-            this.logger.error(`Failed to log report creation: ${error.message}`);
+            this.logger.error(
+              `Failed to log report creation: ${error.message}`,
+            );
           });
       }
 
@@ -187,9 +227,14 @@ export class ReportsService {
       lock: { mode: 'pessimistic_write' },
     });
 
-    if (!report) throw new NotFoundException(`Report with ID ${reportId} not found`);
-    if (!this.isAdmin(admin)) throw new ForbiddenException('Only admins can resolve reports');
-    if (report.status === ReportStatus.RESOLVED || report.status === ReportStatus.DISMISSED) {
+    if (!report)
+      throw new NotFoundException(`Report with ID ${reportId} not found`);
+    if (!this.isAdmin(admin))
+      throw new ForbiddenException('Only admins can resolve reports');
+    if (
+      report.status === ReportStatus.RESOLVED ||
+      report.status === ReportStatus.DISMISSED
+    ) {
       throw new BadRequestException(`Report is already ${report.status}`);
     }
 
@@ -205,10 +250,17 @@ export class ReportsService {
       .logReportResolved(
         reportId,
         admin.id.toString(),
-        { previousStatus, reason: options?.reason, confessionId: report.confessionId, resolvedBy: admin.username },
+        {
+          previousStatus,
+          reason: options?.reason,
+          confessionId: report.confessionId,
+          resolvedBy: admin.username,
+        },
         { ipAddress: options?.ipAddress, userAgent: options?.userAgent },
       )
-      .catch((e) => this.logger.error(`Failed to log report resolution: ${e.message}`));
+      .catch((e) =>
+        this.logger.error(`Failed to log report resolution: ${e.message}`),
+      );
 
     this.logger.log(`Report ${reportId} resolved by admin ${admin.id}`);
     return updatedReport;
@@ -224,9 +276,14 @@ export class ReportsService {
       lock: { mode: 'pessimistic_write' },
     });
 
-    if (!report) throw new NotFoundException(`Report with ID ${reportId} not found`);
-    if (!this.isAdmin(admin)) throw new ForbiddenException('Only admins can dismiss reports');
-    if (report.status === ReportStatus.RESOLVED || report.status === ReportStatus.DISMISSED) {
+    if (!report)
+      throw new NotFoundException(`Report with ID ${reportId} not found`);
+    if (!this.isAdmin(admin))
+      throw new ForbiddenException('Only admins can dismiss reports');
+    if (
+      report.status === ReportStatus.RESOLVED ||
+      report.status === ReportStatus.DISMISSED
+    ) {
       throw new BadRequestException(`Report is already ${report.status}`);
     }
 
@@ -242,10 +299,17 @@ export class ReportsService {
       .logReportDismissed(
         reportId,
         admin.id.toString(),
-        { previousStatus, reason: options?.reason, confessionId: report.confessionId, dismissedBy: admin.username },
+        {
+          previousStatus,
+          reason: options?.reason,
+          confessionId: report.confessionId,
+          dismissedBy: admin.username,
+        },
         { ipAddress: options?.ipAddress, userAgent: options?.userAgent },
       )
-      .catch((e) => this.logger.error(`Failed to log report dismissal: ${e.message}`));
+      .catch((e) =>
+        this.logger.error(`Failed to log report dismissal: ${e.message}`),
+      );
 
     this.logger.log(`Report ${reportId} dismissed by admin ${admin.id}`);
     return updatedReport;
@@ -263,14 +327,19 @@ export class ReportsService {
     });
 
     if (!report) throw new NotFoundException(`Report with ID ${id} not found`);
-    if (report.status === ReportStatus.RESOLVED || report.status === ReportStatus.DISMISSED) {
+    if (
+      report.status === ReportStatus.RESOLVED ||
+      report.status === ReportStatus.DISMISSED
+    ) {
       throw new BadRequestException(`Report is already ${report.status}`);
     }
 
     const action = dto.action;
     const previousStatus = report.status;
-    const status = action === 'resolved' ? ReportStatus.RESOLVED : ReportStatus.DISMISSED;
-    const defaultNote = action === 'resolved' ? 'Report resolved' : 'Report dismissed';
+    const status =
+      action === 'resolved' ? ReportStatus.RESOLVED : ReportStatus.DISMISSED;
+    const defaultNote =
+      action === 'resolved' ? 'Report resolved' : 'Report dismissed';
 
     report.status = status;
     report.resolvedBy = admin.id;
@@ -284,19 +353,33 @@ export class ReportsService {
         .logReportResolved(
           id,
           admin.id.toString(),
-          { previousStatus, reason: dto.note, confessionId: report.confessionId, resolvedBy: admin.username },
+          {
+            previousStatus,
+            reason: dto.note,
+            confessionId: report.confessionId,
+            resolvedBy: admin.username,
+          },
           { ipAddress: context?.ipAddress, userAgent: context?.userAgent },
         )
-        .catch((e) => this.logger.error(`Failed to log report resolution: ${e.message}`));
+        .catch((e) =>
+          this.logger.error(`Failed to log report resolution: ${e.message}`),
+        );
     } else {
       this.auditLogService
         .logReportDismissed(
           id,
           admin.id.toString(),
-          { previousStatus, reason: dto.note, confessionId: report.confessionId, dismissedBy: admin.username },
+          {
+            previousStatus,
+            reason: dto.note,
+            confessionId: report.confessionId,
+            dismissedBy: admin.username,
+          },
           { ipAddress: context?.ipAddress, userAgent: context?.userAgent },
         )
-        .catch((e) => this.logger.error(`Failed to log report dismissal: ${e.message}`));
+        .catch((e) =>
+          this.logger.error(`Failed to log report dismissal: ${e.message}`),
+        );
     }
 
     this.logger.log(`Report ${id} ${action} by admin ${admin.id}`);
@@ -337,7 +420,9 @@ export class ReportsService {
     return report;
   }
 
-  async getReportsWithFilters(query: GetReportsQueryDto): Promise<PaginatedReportsResponseDto> {
+  async getReportsWithFilters(
+    query: GetReportsQueryDto,
+  ): Promise<PaginatedReportsResponseDto> {
     const page = query.page || 1;
     const limit = query.limit || 10;
     const offset = (page - 1) * limit;
@@ -348,18 +433,29 @@ export class ReportsService {
       .leftJoinAndSelect('report.reporter', 'reporter')
       .leftJoinAndSelect('report.resolver', 'resolver');
 
-    if (query.status) queryBuilder.andWhere('report.status = :status', { status: query.status });
-    if (query.reason) queryBuilder.andWhere('report.type = :reason', { reason: query.reason });
+    if (query.status)
+      queryBuilder.andWhere('report.status = :status', {
+        status: query.status,
+      });
+    if (query.reason)
+      queryBuilder.andWhere('report.type = :reason', { reason: query.reason });
 
     if (query.startDate && query.endDate) {
-      queryBuilder.andWhere('report.createdAt BETWEEN :startDate AND :endDate', {
+      queryBuilder.andWhere(
+        'report.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(query.startDate),
+          endDate: new Date(query.endDate),
+        },
+      );
+    } else if (query.startDate) {
+      queryBuilder.andWhere('report.createdAt >= :startDate', {
         startDate: new Date(query.startDate),
+      });
+    } else if (query.endDate) {
+      queryBuilder.andWhere('report.createdAt <= :endDate', {
         endDate: new Date(query.endDate),
       });
-    } else if (query.startDate) {
-      queryBuilder.andWhere('report.createdAt >= :startDate', { startDate: new Date(query.startDate) });
-    } else if (query.endDate) {
-      queryBuilder.andWhere('report.createdAt <= :endDate', { endDate: new Date(query.endDate) });
     }
 
     const sortBy = query.sortBy || 'createdAt';

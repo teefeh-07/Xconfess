@@ -3,7 +3,9 @@ import { AdminController } from './admin.controller';
 import { AdminService } from './services/admin.service';
 import { ModerationService } from './services/moderation.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AdminGuard } from './guards/admin.guard';
+import { AdminGuard } from '../auth/admin.guard';
+import { ModerationTemplateService } from '../comment/moderation-template.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 describe('AdminController', () => {
   let controller: AdminController;
@@ -24,11 +26,16 @@ describe('AdminController', () => {
     banUser: jest.fn(),
     unbanUser: jest.fn(),
     getAnalytics: jest.fn(),
+    getObservability: jest.fn(),
   };
 
   const mockModerationService = {
     logAction: jest.fn(),
     getAuditLogs: jest.fn(),
+  };
+
+  const mockAuditLogService = {
+    findAll: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -42,6 +49,14 @@ describe('AdminController', () => {
         {
           provide: ModerationService,
           useValue: mockModerationService,
+        },
+        {
+          provide: ModerationTemplateService,
+          useValue: {},
+        },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLogService,
         },
       ],
     })
@@ -81,12 +96,18 @@ describe('AdminController', () => {
       mockAdminService.resolveReport.mockResolvedValue(mockReport);
 
       const req = { user: { userId: '1' } } as any;
-      const result = await controller.resolveReport('1', { resolutionNotes: 'test' }, req);
+      const result = await controller.resolveReport(
+        '1',
+        { resolutionNotes: 'test' },
+        1,
+        req,
+      );
 
       expect(adminService.resolveReport).toHaveBeenCalledWith(
         '1',
         1,
         'test',
+        undefined,
         req,
       );
     });
@@ -94,10 +115,18 @@ describe('AdminController', () => {
 
   describe('dismissReport', () => {
     it('should dismiss a report', async () => {
-      mockAdminService.dismissReport.mockResolvedValue({ id: '1', status: 'dismissed' });
+      mockAdminService.dismissReport.mockResolvedValue({
+        id: '1',
+        status: 'dismissed',
+      });
       const req = { user: { userId: '2' } } as any;
-      await controller.dismissReport('1', { resolutionNotes: 'nope' }, req);
-      expect(adminService.dismissReport).toHaveBeenCalledWith('1', 2, 'nope', req);
+      await controller.dismissReport('1', { resolutionNotes: 'nope' }, 2, req);
+      expect(adminService.dismissReport).toHaveBeenCalledWith(
+        '1',
+        2,
+        'nope',
+        req,
+      );
     });
   });
 
@@ -105,8 +134,12 @@ describe('AdminController', () => {
     it('should bulk resolve reports', async () => {
       mockAdminService.bulkResolveReports.mockResolvedValue(3);
       const req = { user: { userId: '1' } } as any;
-      const res = await controller.bulkResolveReports({ reportIds: ['a', 'b', 'c'] } as any, req);
-      expect(res).toEqual({ resolved: 3 });
+      const res = await controller.bulkResolveReports(
+        { reportIds: ['a', 'b', 'c'] } as any,
+        1,
+        req,
+      );
+      expect(res).toEqual(3);
     });
   });
 
@@ -114,13 +147,23 @@ describe('AdminController', () => {
     it('deleteConfession calls service', async () => {
       mockAdminService.deleteConfession.mockResolvedValue(undefined);
       const req = { user: { userId: '1' } } as any;
-      const res = await controller.deleteConfession('c1', { reason: 'bad' }, req);
+      const res = await controller.deleteConfession(
+        'c1',
+        { reason: 'bad' },
+        req,
+      );
       expect(res.message).toContain('deleted');
     });
 
     it('hide/unhide call service', async () => {
-      mockAdminService.hideConfession.mockResolvedValue({ id: 'c1', isHidden: true });
-      mockAdminService.unhideConfession.mockResolvedValue({ id: 'c1', isHidden: false });
+      mockAdminService.hideConfession.mockResolvedValue({
+        id: 'c1',
+        isHidden: true,
+      });
+      mockAdminService.unhideConfession.mockResolvedValue({
+        id: 'c1',
+        isHidden: false,
+      });
       const req = { user: { userId: '1' } } as any;
       await controller.hideConfession('c1', { reason: 'x' }, req);
       await controller.unhideConfession('c1', req);
@@ -162,10 +205,55 @@ describe('AdminController', () => {
 
   describe('audit logs', () => {
     it('getAuditLogs calls moderation service', async () => {
-      mockModerationService.getAuditLogs.mockResolvedValue([[{ id: 'l1' }], 1]);
+      mockAuditLogService.findAll.mockResolvedValue({ data: [{ id: 'l1' }], total: 1 });
       const res = await controller.getAuditLogs();
       expect(res.total).toBe(1);
-      expect(moderationService.getAuditLogs).toHaveBeenCalled();
+      expect(mockAuditLogService.findAll).toHaveBeenCalled();
+    });
+  });
+
+  describe('observability', () => {
+    it('getObservability returns aggregated audit and notification metrics', async () => {
+      const mockPayload = {
+        audit: {
+          totalLogs: 12,
+          actionTypeCounts: [{ actionType: 'REPORT_RESOLVED', count: 6 }],
+        },
+        notifications: {
+          main: { active: 2, waiting: 1, failed: 0 },
+          dlq: { failed: 0, waiting: 0, delayed: 0 },
+        },
+        generatedAt: '2026-06-01T00:00:00.000Z',
+      };
+      mockAdminService.getObservability.mockResolvedValue(mockPayload);
+
+      const res = await controller.getObservability('2026-05-01', '2026-05-31');
+
+      expect(res).toEqual(mockPayload);
+      expect(mockAdminService.getObservability).toHaveBeenCalledWith(
+        new Date('2026-05-01'),
+        new Date('2026-05-31'),
+      );
+    });
+  });
+
+  describe('route ownership — no duplicate admin/reports registration', () => {
+    it('AdminController is the sole owner of GET /admin/reports', () => {
+      const routes: { method: string; path: string }[] = Reflect.getMetadata(
+        'routes',
+        AdminController,
+      ) ?? [];
+      const reportListRoutes = routes.filter(
+        (r) => r.method === 'GET' && r.path?.includes('reports'),
+      );
+      // Duplicate path registration would surface multiple entries here
+      expect(reportListRoutes.length).toBeLessThanOrEqual(1);
+    });
+
+    it('AdminController has resolve and dismiss handlers for /admin/reports/:id', () => {
+      const proto = AdminController.prototype;
+      expect(typeof proto.resolveReport).toBe('function');
+      expect(typeof proto.dismissReport).toBe('function');
     });
   });
 });

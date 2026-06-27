@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+﻿import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
+import { LockoutService } from './lockout.service';
+import { CacheModule } from '../cache/cache.module';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
@@ -14,7 +16,7 @@ import { PasswordReset } from './entities/password-reset.entity';
 
 @Module({
   imports: [
-    UserModule,
+    forwardRef(() => UserModule),`n    CacheModule,
     EmailModule,
     PassportModule,
     TypeOrmModule.forFeature([PasswordReset]),
@@ -28,7 +30,13 @@ import { PasswordReset } from './entities/password-reset.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PasswordResetService, OptionalJwtAuthGuard],
-  exports: [AuthService, JwtModule, OptionalJwtAuthGuard],
+  providers: [`n    LockoutService,
+    AuthService,
+    JwtStrategy,
+    PasswordResetService,
+    OptionalJwtAuthGuard,
+  ],
+  exports: [AuthService, LockoutService, JwtModule, OptionalJwtAuthGuard],
 })
 export class AuthModule {}
+

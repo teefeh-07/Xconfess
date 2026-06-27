@@ -3,8 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSDK from '@stellar/stellar-sdk';
 import { StellarConfigService } from './stellar-config.service';
 import { TransactionBuilderService } from './transaction-builder.service';
+import { DeploymentMetadataService } from './services/deployment-metadata.service';
 import { ITransactionResult } from './interfaces/stellar-config.interface';
+import { StellarConfigResponseDto } from './dto/stellar-config-response.dto';
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import { HttpStatus } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { AnonymousConfession } from '../confession/entities/confession.entity';
 
 export interface AnchorData {
   stellarTxHash: string;
@@ -23,6 +31,9 @@ export class StellarService {
     private readonly configService: ConfigService,
     private stellarConfig: StellarConfigService,
     private txBuilder: TransactionBuilderService,
+    private deploymentMetadataService: DeploymentMetadataService,
+    @InjectRepository(AnonymousConfession)
+    private readonly confessionRepo: Repository<AnonymousConfession>,
   ) {
     this.contractId = this.configService.get<string>(
       'CONFESSION_ANCHOR_CONTRACT',
@@ -55,9 +66,14 @@ export class StellarService {
           balance: b.balance,
         }));
       return { native, assets };
-    } catch (error) {
-      this.logger.error(`Failed to get account balance: ${error.message}`);
-      throw new Error(`Account not found or network error: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to get account balance: ${message}`);
+      throw new AppException(
+        `Account not found or network error: ${message}`,
+        ErrorCode.STELLAR_ERROR,
+        HttpStatus.NOT_FOUND,
+      );
     }
   }
 
@@ -76,9 +92,14 @@ export class StellarService {
         envelope: tx.envelope_xdr,
         result: tx.result_xdr,
       };
-    } catch (error) {
-      this.logger.error(`Transaction verification failed: ${error.message}`);
-      throw new Error(`Transaction not found: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Transaction verification failed: ${message}`);
+      throw new AppException(
+        `Transaction not found: ${message}`,
+        ErrorCode.NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+      );
     }
   }
 
@@ -90,21 +111,36 @@ export class StellarService {
       const server = this.stellarConfig.getServer();
       await server.loadAccount(publicKey);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
 
   /**
-   * Get network configuration (safe for public exposure)
+   * Get network configuration (safe for public exposure; never includes secrets).
    */
-  getNetworkConfig() {
+  getNetworkConfig(): StellarConfigResponseDto {
     const config = this.stellarConfig.getConfig();
+    const metadataFreshness = this.deploymentMetadataService.getMetadataFreshness();
     return {
       network: config.network,
       horizonUrl: config.horizonUrl,
       sorobanRpcUrl: config.sorobanRpcUrl,
-      contractIds: config.contractIds,
+      contractIds: {
+        confessionAnchor: config.contractIds.confessionAnchor ?? null,
+        reputationBadges: config.contractIds.reputationBadges ?? null,
+        tippingSystem: config.contractIds.tippingSystem ?? null,
+      },
+      deploymentMetadata: {
+        loaded: !!this.deploymentMetadataService.getMetadata(),
+        generatedAtUtc: metadataFreshness.generatedAtUtc,
+        isStale: metadataFreshness.isStale,
+        ageDays:
+          metadataFreshness.daysSinceGeneration >= 0
+            ? metadataFreshness.daysSinceGeneration
+            : null,
+        loadError: this.deploymentMetadataService.getLoadError(),
+      },
     };
   }
 
@@ -119,7 +155,10 @@ export class StellarService {
     try {
       const serverSecret = this.configService.get('STELLAR_SERVER_SECRET');
       if (!serverSecret) {
-        throw new Error('Server secret key not configured');
+        throw new AppException(
+          'Server secret key not configured',
+          ErrorCode.INTERNAL_SERVER_ERROR,
+        );
       }
       const serverKeypair = StellarSDK.Keypair.fromSecret(serverSecret);
       const tx = await this.txBuilder.buildPaymentTransaction(
@@ -135,8 +174,9 @@ export class StellarService {
         hash: result.hash,
         success: result.successful,
       };
-    } catch (error) {
-      this.logger.error(`Payment failed: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Payment failed: ${message}`);
       throw error;
     }
   }
@@ -181,7 +221,7 @@ export class StellarService {
   /**
    * Verify a transaction exists on the Stellar network
    */
-  async verifyTransaction(txHash: string): Promise<boolean> {
+  async verifyTransaction(txHash: string, requestId?: string): Promise<boolean> {
     if (!this.isValidTxHash(txHash)) {
       return false;
     }
@@ -194,8 +234,13 @@ export class StellarService {
 
       const data = await response.json();
       return data.successful === true;
-    } catch (error) {
-      this.logger.error('Error verifying Stellar transaction:', error);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error({
+        message: `Error verifying Stellar transaction: ${message}`,
+        requestId,
+        txHash,
+      });
       return false;
     }
   }
@@ -224,11 +269,70 @@ export class StellarService {
   /**
    * Get contract configuration info
    */
-  getContractInfo(): { contractId: string; network: string; horizonUrl: string } {
+  getContractInfo(): {
+    contractId: string;
+    network: string;
+    horizonUrl: string;
+  } {
     return {
       contractId: this.contractId,
       network: this.network,
       horizonUrl: this.horizonUrl,
+    };
+  }
+
+  /**
+   * Get paginated anchored confessions for a user
+   */
+  async getUserAnchors(
+    userId: number,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    data: Array<{
+      confessionId: string;
+      stellarTxHash: string;
+      stellarHash: string;
+      anchoredAt: Date;
+      contractId: string;
+      stellarExplorerUrl: string;
+      message: string;
+    }>;
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const skip = (page - 1) * limit;
+
+    const [confessions, total] = await this.confessionRepo
+      .createQueryBuilder('confession')
+      .innerJoin('confession.anonymousUser', 'anonUser')
+      .innerJoin('anonUser.userLinks', 'userLink')
+      .innerJoin('userLink.user', 'user')
+      .where('user.id = :userId', { userId })
+      .andWhere('confession.isAnchored = true')
+      .andWhere('confession.isDeleted = false')
+      .orderBy('confession.anchoredAt', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = confessions.map((conf) => ({
+      confessionId: conf.id,
+      stellarTxHash: conf.stellarTxHash,
+      stellarHash: conf.stellarHash,
+      anchoredAt: conf.anchoredAt,
+      contractId: this.contractId,
+      stellarExplorerUrl: this.getExplorerUrl(conf.stellarTxHash),
+      message: '',
+    }));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

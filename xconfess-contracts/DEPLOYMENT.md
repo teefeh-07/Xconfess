@@ -2,6 +2,23 @@
 
 Complete guide for deploying xConfess smart contracts to Stellar networks.
 
+## Canonical Reproducible Flow
+
+Use the single root script for both build and deploy operations:
+
+```bash
+# From repository root
+./scripts/contracts-release.sh build
+./scripts/contracts-release.sh deploy --network testnet --source deployer
+```
+
+This flow builds all workspace contract crates with locked dependencies, verifies
+the expected WASM artifacts, and writes deployment metadata including crate
+versions and SHA-256 hashes.
+
+Versioning expectations for crate releases are defined in
+[`VERSIONING.md`](./VERSIONING.md).
+
 ## 📋 Prerequisites
 
 Before deploying contracts, ensure you have:
@@ -9,7 +26,21 @@ Before deploying contracts, ensure you have:
 1. ✅ Soroban development environment set up (see [README.md](./README.md))
 2. ✅ All contracts built successfully with `stellar contract build`
 3. ✅ Stellar account with testnet XLM (for testing)
-4. ✅ Stellar CLI v21.x or later
+4. ✅ Stellar CLI v22.0.0 or later
+
+For Windows contributors, see [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) for
+platform-specific notes on PowerShell, the WASM target, and path issues.
+
+Before a full deployment, run the automated preflight check from the repository
+root to verify all prerequisites at once:
+
+```bash
+./scripts/contracts-preflight.sh           # build-only checks
+./scripts/contracts-preflight.sh --deploy  # also checks key, network, and Stellar CLI
+```
+
+A dry-run checklist with manual verification steps is available in
+[TESTNET_DRY_RUN_CHECKLIST.md](./TESTNET_DRY_RUN_CHECKLIST.md).
 
 ### Quick Setup Check
 
@@ -18,9 +49,9 @@ Before deploying contracts, ensure you have:
 source $HOME/.cargo/env
 
 # Verify tools
-rustc --version  # Should be 1.74.0+
+rustc --version  # Should be 1.81+
 cargo --version
-stellar --version  # Should be 21.x+
+stellar --version  # Should be 22.0.0+
 ```
 
 ## 🌐 Network Configuration
@@ -51,13 +82,24 @@ stellar keys show mykey
 
 ## 🚀 Building Contracts
 
-### Build All Contracts
+### Canonical Build (Recommended)
+
+From the repository root, use the canonical release script:
 
 ```bash
-cd /workspaces/Xconfess/xconfess-contracts
+# From repository root
+./scripts/contracts-release.sh build
+```
+
+This builds all contracts with locked dependencies, verifies artifacts, and generates deployment metadata.
+
+### Manual Build (if needed)
+
+```bash
+cd xconfess-contracts
 
 # Build all for WebAssembly
-cargo build --release --target wasm32-unknown-unknown
+cargo build --locked --workspace --release --target wasm32-unknown-unknown
 ```
 
 ### Build for Testing
@@ -72,70 +114,42 @@ cargo build --target wasm32-unknown-unknown
 After building, compiled contracts are at:
 
 ```
-target/wasm32-unknown-unknown/release/
+xconfess-contracts/target/wasm32-unknown-unknown/release/
 ├── confession_anchor.wasm
+├── confession_registry.wasm
 ├── reputation_badges.wasm
 └── anonymous_tipping.wasm
 ```
 
-## 🚁 Deployment Steps
+All four contracts are built and deployed together.
 
-### 1. Prepare Account
+## 🚁 Deployment Steps (Using Canonical Script)
 
-```bash
-# Use your test account
-export STELLAR_ACCOUNT="your-public-key"
-export STELLAR_SECRET="your-secret-key"
-
-# Set network
-stellar network use testnet
-```
-
-### 2. Deploy Confession Anchor Contract
+**Use the canonical deployment script instead of manual steps:**
 
 ```bash
-# Build contract
-cargo build --release --target wasm32-unknown-unknown -p confession-anchor
-
-# Deploy contract
-stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/confession_anchor.wasm \
-  --source-account $STELLAR_ACCOUNT \
-  --network testnet
-
-# Note: Save the returned CONTRACT_ID
-export CONFESSION_ANCHOR_ID="contract-id-from-output"
+# From repository root
+./scripts/contracts-release.sh deploy --network testnet --source deployer
 ```
 
-### 3. Deploy Reputation Badges Contract
+Replace:
+- `testnet` with the target network (futurenet, public, etc.)
+- `deployer` with the name of your Stellar CLI key
+
+**What the script does:**
+1. Verifies all WASM artifacts exist
+2. Deploys each contract in sequence
+3. Records each returned contract ID
+4. Generates `deployments/testnet.json` with all metadata
+
+**Result:** Check `deployments/testnet.json` for the contract IDs of all four contracts.
 
 ```bash
-# Build contract
-cargo build --release --target wasm32-unknown-unknown -p reputation-badges
-
-# Deploy contract
-stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/reputation_badges.wasm \
-  --source-account $STELLAR_ACCOUNT \
-  --network testnet
-
-export REPUTATION_BADGES_ID="contract-id-from-output"
+# Extract contract IDs
+jq '.contracts | to_entries[] | {name: .key, id: .value.contract_id}' deployments/testnet.json
 ```
 
-### 4. Deploy Anonymous Tipping Contract
-
-```bash
-# Build contract
-cargo build --release --target wasm32-unknown-unknown -p anonymous-tipping
-
-# Deploy contract
-stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/anonymous_tipping.wasm \
-  --source-account $STELLAR_ACCOUNT \
-  --network testnet
-
-export ANONYMOUS_TIPPING_ID="contract-id-from-output"
-```
+**Do not manually deploy individual contracts.** The script ensures all four contracts are built and deployed from the same `Cargo.lock` snapshot.
 
 ## 🧪 Testing Contracts
 
@@ -143,10 +157,12 @@ export ANONYMOUS_TIPPING_ID="contract-id-from-output"
 
 ```bash
 # Run all contract tests
+cd xconfess-contracts
 cargo test
 
 # Run specific contract tests
 cargo test -p confession-anchor
+cargo test -p confession-registry
 cargo test -p reputation-badges
 cargo test -p anonymous-tipping
 
@@ -154,49 +170,82 @@ cargo test -p anonymous-tipping
 cargo test -- --nocapture
 ```
 
-### Integration Tests
+### Canonical Test Script
 
 ```bash
-# Test contract invocation locally
+# From repository root
+./scripts/test-contracts.sh
+```
+
+### Post-Deployment Verification
+
+After deploying to a network, test contract invocations:
+
+```bash
+# Test ConfessionAnchor — get_version is a read-only call available on all contracts
 stellar contract invoke \
   --id $CONFESSION_ANCHOR_ID \
-  --source-account $STELLAR_ACCOUNT \
+  --source "$DEPLOYER_KEY" \
   --network testnet \
-  -- init_contract
+  -- get_version
 ```
 
-### Test Script
+## Deployment Metadata
+
+Contract IDs are automatically saved in `deployments/<network>.json` by the canonical script:
 
 ```bash
-# From project root
-bash xconfess-contracts/scripts/test-contracts.sh
+# View deployment metadata
+cat deployments/testnet.json | jq '.'
+
+# Extract contract IDs
+jq '.contracts | to_entries[] | {name: .key, id: .value.contract_id}' deployments/testnet.json
 ```
 
-## 📝 Configuration Storage
+This file includes:
+- Generated timestamp
+- Network name
+- All four contract IDs
+- Version and SHA-256 hash for each contract WASM
 
-Save deployed contract IDs:
+**Important:** Commit this file to version control for tracking which versions are deployed to each network.
 
-Create `deployments/testnet.json`:
+```bash
+git add deployments/testnet.json
+git commit -m "deploy: contracts deployed to testnet"
+```
+
+Example `deployments/testnet.json` structure:
 
 ```json
 {
+  "generated_at_utc": "2025-01-01T00:00:00Z",
   "network": "testnet",
-  "deployed_at": "2024-01-25T00:00:00Z",
+  "target": "wasm32-unknown-unknown",
   "contracts": {
-    "confession_anchor": {
-      "id": "CXXXXXXXXX...",
-      "wasm": "confession_anchor.wasm",
-      "version": "0.1.0"
+    "confession-anchor": {
+      "contract_id": "CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "sha256": "abc123...",
+      "version": "0.1.0",
+      "wasm_file": "target/wasm32-unknown-unknown/release/confession_anchor.wasm"
     },
-    "reputation_badges": {
-      "id": "CYYYYYYYYY...",
-      "wasm": "reputation_badges.wasm",
-      "version": "0.1.0"
+    "confession-registry": {
+      "contract_id": "CWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+      "sha256": "def456...",
+      "version": "0.1.0",
+      "wasm_file": "target/wasm32-unknown-unknown/release/confession_registry.wasm"
     },
-    "anonymous_tipping": {
-      "id": "CZZZZZZZZZZ...",
-      "wasm": "anonymous_tipping.wasm",
-      "version": "0.1.0"
+    "reputation-badges": {
+      "contract_id": "CYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
+      "sha256": "ghi789...",
+      "version": "0.1.0",
+      "wasm_file": "target/wasm32-unknown-unknown/release/reputation_badges.wasm"
+    },
+    "anonymous-tipping": {
+      "contract_id": "CZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "sha256": "jkl012...",
+      "version": "0.1.0",
+      "wasm_file": "target/wasm32-unknown-unknown/release/anonymous_tipping.wasm"
     }
   }
 }

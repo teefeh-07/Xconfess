@@ -1,175 +1,250 @@
-// import {
-//   Controller,
-//   Post,
-//   Body,
-//   Headers,
-//   HttpCode,
-//   HttpStatus,
-//   UnauthorizedException,
-//   Logger,
-// } from '@nestjs/common';
-// import { ConfigService } from '@nestjs/config';
-// import { InjectRepository } from '@nestjs/typeorm';
-// import { Repository } from 'typeorm';
-// import { Confession } from '../confession/entities/confession.entity';
-// import { ModerationRepositoryService } from './moderation-repository.service';
-// import { ModerationStatus } from './ai-moderation.service';
-// import * as crypto from 'crypto';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Post,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as crypto from 'crypto';
+import { Repository } from 'typeorm';
+import { AnonymousConfession } from '../confession/entities/confession.entity';
+import {
+  ModerationCategory,
+  ModerationResult,
+  ModerationStatus,
+} from './ai-moderation.service';
+import { ModerationRepositoryService } from './moderation-repository.service';
 
-// interface WebhookPayload {
-//   confessionId: string;
-//   moderationScore: number;
-//   moderationFlags: string[];
-//   moderationStatus: ModerationStatus;
-//   details: Record<string, number>;
-//   timestamp: string;
-// }
+interface WebhookPayload {
+  confessionId: string;
+  moderationScore: number;
+  moderationFlags: string[];
+  moderationStatus: ModerationStatus;
+  details: Record<string, number>;
+  timestamp: string;
+}
 
-// @Controller('webhooks/moderation')
-// export class ModerationWebhookController {
-//   private readonly logger = new Logger(ModerationWebhookController.name);
-//   private readonly webhookSecret: string;
+@Controller('webhooks/moderation')
+export class ModerationWebhookController {
+  private readonly logger = new Logger(ModerationWebhookController.name);
+  private readonly webhookSecret: string;
+  private readonly timestampToleranceSeconds: number;
 
-//   constructor(
-//     private readonly configService: ConfigService,
-//     @InjectRepository(Confession)
-//     private readonly confessionRepo: Repository<Confession>,
-//     private readonly moderationRepoService: ModerationRepositoryService,
-//   ) {
-//     this.webhookSecret = this.configService.get<string>('WEBHOOK_SECRET');
-//   }
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
+    @InjectRepository(AnonymousConfession)
+    private readonly confessionRepo: Repository<AnonymousConfession>,
+    private readonly moderationRepoService: ModerationRepositoryService,
+  ) {
+    this.webhookSecret = this.configService.get<string>('WEBHOOK_SECRET', '');
+    this.timestampToleranceSeconds = this.configService.get<number>(
+      'WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS',
+      300,
+    );
+  }
 
-//   @Post('results')
-//   @HttpCode(HttpStatus.OK)
-//   async handleModerationResults(
-//     @Body() payload: WebhookPayload,
-//     @Headers('x-webhook-signature') signature: string,
-//   ) {
-//     // Verify webhook signature
-//     if (!this.verifySignature(JSON.stringify(payload), signature)) {
-//       this.logger.warn('Invalid webhook signature');
-//       throw new UnauthorizedException('Invalid signature');
-//     }
+  @Post('results')
+  @HttpCode(HttpStatus.OK)
+  async handleModerationResults(
+    @Body() payload: WebhookPayload,
+    @Headers('x-webhook-signature') signature: string,
+  ) {
+    // Issue #782: Enhanced signature validation and malformed payload handling
+    const serializedPayload = JSON.stringify(payload);
 
-//     try {
-//       this.logger.log(`Processing webhook for confession ${payload.confessionId}`);
+    // Validate signature presence first
+    if (!signature) {
+      this.logger.warn('Missing moderation webhook signature');
+      throw new UnauthorizedException('Missing signature');
+    }
 
-//       // Find the confession
-//       const confession = await this.confessionRepo.findOne({
-//         where: { id: payload.confessionId },
-//       });
+    // Validate timestamp freshness before processing to prevent replay.
+    // If timestamp is missing or malformed, we treat as bad request.
+    let timestamp: Date | null = null;
+    try {
+      timestamp = payload.timestamp ? new Date(payload.timestamp) : null;
+      if (!timestamp || isNaN(timestamp.getTime())) {
+        this.logger.warn('Malformed or missing timestamp in webhook payload');
+        throw new BadRequestException('Malformed payload: invalid timestamp');
+      }
+    } catch (err) {
+      this.logger.warn('Malformed timestamp in moderation webhook payload');
+      throw new BadRequestException('Malformed payload: invalid timestamp');
+    }
 
-//       if (!confession) {
-//         this.logger.error(`Confession ${payload.confessionId} not found`);
-//         return { success: false, error: 'Confession not found' };
-//       }
+    const now = new Date();
+    const ageSeconds = Math.abs((now.getTime() - timestamp.getTime()) / 1000);
+    if (ageSeconds > this.timestampToleranceSeconds) {
+      // Audit stale but signed request and reject
+      try {
+        await this.moderationRepoService.syncWebhookResult(
+          {
+            confessionId: payload.confessionId ?? '',
+            content: serializedPayload,
+            result: {
+              score: payload.moderationScore ?? 0,
+              flags: (payload.moderationFlags ?? []) as ModerationCategory[],
+              status: payload.moderationStatus ?? ModerationStatus.PENDING,
+              details: payload.details ?? {},
+              requiresReview: false,
+            },
+            deliveryHash: this.buildDeliveryHash(serializedPayload),
+            deliveryTimestamp: payload.timestamp,
+            signatureValid: this.verifySignature(serializedPayload, signature),
+            payloadMalformed: false,
+            deliveryStale: true,
+          },
+        );
+      } catch (e) {
+        this.logger.error('Failed to audit stale webhook', e as any);
+      }
 
-//       // Update confession with async moderation results
-//       confession.moderationScore = payload.moderationScore;
-//       confession.moderationFlags = payload.moderationFlags as any;
-//       confession.moderationStatus = payload.moderationStatus;
-//       confession.moderationDetails = payload.details;
-//       confession.requiresReview =
-//         payload.moderationStatus === ModerationStatus.FLAGGED;
-//       confession.isHidden =
-//         payload.moderationStatus === ModerationStatus.REJECTED;
+      this.logger.warn('Rejected stale moderation webhook delivery');
+      throw new UnauthorizedException('Stale webhook delivery');
+    }
 
-//       await this.confessionRepo.save(confession);
+    // Now validate signature
+    if (!this.verifySignature(serializedPayload, signature)) {
+      this.logger.warn('Invalid moderation webhook signature');
+      throw new UnauthorizedException('Invalid signature');
+    }
 
-//       // Update moderation log
-//       const logs = await this.moderationRepoService.getLogsByConfession(
-//         payload.confessionId,
-//       );
+    // Validate payload structure
+    if (!payload.confessionId || !payload.moderationStatus) {
+      this.logger.error('Malformed moderation webhook payload', { payload });
+      throw new BadRequestException('Malformed payload: missing required fields');
+    }
 
-//       if (logs.length > 0) {
-//         const log = logs[0];
-//         log.moderationScore = payload.moderationScore;
-//         log.moderationFlags = payload.moderationFlags as any;
-//         log.moderationStatus = payload.moderationStatus;
-//         log.details = payload.details;
-//         log.requiresReview =
-//           payload.moderationStatus === ModerationStatus.FLAGGED;
-//       }
+    const requiresReview =
+      payload.moderationStatus === ModerationStatus.FLAGGED;
+    const shouldHide = payload.moderationStatus === ModerationStatus.REJECTED;
+    const moderationResult: ModerationResult = {
+      score: payload.moderationScore,
+      flags: payload.moderationFlags as ModerationCategory[],
+      status: payload.moderationStatus,
+      details: payload.details,
+      requiresReview,
+    };
+    const deliveryHash = this.buildDeliveryHash(serializedPayload);
 
-//       this.logger.log(
-//         `Webhook processed successfully for confession ${payload.confessionId}`,
-//       );
+    const result = await this.confessionRepo.manager.transaction(
+      async (manager) => {
+        const confessionRepo = manager.getRepository(AnonymousConfession);
+        const confession = await confessionRepo.findOne({
+          where: { id: payload.confessionId },
+        });
 
-//       return {
-//         success: true,
-//         confessionId: payload.confessionId,
-//         status: payload.moderationStatus,
-//       };
-//     } catch (error) {
-//       this.logger.error('Error processing webhook:', error);
-//       return { success: false, error: error.message };
-//     }
-//   }
+        if (!confession) {
+          return { status: 'not_found' as const };
+        }
 
-//   private verifySignature(payload: string, signature: string): boolean {
-//     if (!this.webhookSecret || !signature) {
-//       return false;
-//     }
+        // Issue #782: Idempotent webhook processing with delivery hash
+        const { isIdempotent } =
+          await this.moderationRepoService.syncWebhookResult(
+            {
+              confessionId: confession.id,
+              content: confession.message,
+              result: moderationResult,
+              deliveryHash,
+              deliveryTimestamp: payload.timestamp,
+              signatureValid: true,
+              payloadMalformed: false,
+            },
+            manager,
+          );
 
-//     const expectedSignature = crypto
-//       .createHmac('sha256', this.webhookSecret)
-//       .update(payload)
-//       .digest('hex');
+        if (isIdempotent) {
+          return { status: 'idempotent' as const, confessionId: confession.id };
+        }
 
-//     return crypto.timingSafeEqual(
-//       Buffer.from(signature),
-//       Buffer.from(expectedSignature),
-//     );
-//   }
-// }
+        confession.moderationScore = payload.moderationScore;
+        confession.moderationFlags = payload.moderationFlags;
+        confession.moderationStatus = payload.moderationStatus;
+        confession.moderationDetails = payload.details;
+        confession.requiresReview = requiresReview;
+        confession.isHidden = shouldHide;
 
-// // src/moderation/moderation-events.listener.ts
-// import { Injectable, Logger } from '@nestjs/common';
-// import { OnEvent } from '@nestjs/event-emitter';
+        await confessionRepo.save(confession);
 
-// interface HighSeverityEvent {
-//   confessionId: string;
-//   userId?: string;
-//   score: number;
-//   flags: string[];
-// }
+        return { status: 'processed' as const, confessionId: confession.id };
+      },
+    );
 
-// interface RequiresReviewEvent {
-//   confessionId: string;
-//   userId?: string;
-//   score: number;
-//   flags: string[];
-// }
+    if (result.status === 'not_found') {
+      this.logger.error(`Confession ${payload.confessionId} not found`);
+      return { success: false, error: 'Confession not found' };
+    }
 
-// @Injectable()
-// export class ModerationEventsListener {
-//   private readonly logger = new Logger(ModerationEventsListener.name);
+    if (result.status === 'idempotent') {
+      this.logger.log(
+        `Ignoring duplicate moderation webhook for confession ${payload.confessionId}`,
+      );
 
-//   @OnEvent('moderation.high-severity')
-//   async handleHighSeverity(event: HighSeverityEvent) {
-//     this.logger.warn(
-//       `HIGH SEVERITY CONTENT DETECTED - Confession: ${event.confessionId}, ` +
-//       `Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
-//     );
+      return {
+        success: true,
+        confessionId: result.confessionId,
+        status: payload.moderationStatus,
+        isIdempotent: true,
+      };
+    }
 
-//     // TODO: Send notification to admin/moderators
-//     // Example: this.notificationService.notifyModerators(event);
+    if (payload.moderationStatus === ModerationStatus.REJECTED) {
+      this.eventEmitter.emit('moderation.high-severity', {
+        confessionId: result.confessionId,
+        score: payload.moderationScore,
+        flags: payload.moderationFlags,
+      });
+    }
 
-//     // TODO: Could also trigger additional actions like:
-//     // - Email notification
-//     // - Slack/Discord webhook
-//     // - SMS alert for critical content
-//     // - Automatic user warning/suspension for repeat offenders
-//   }
+    if (payload.moderationStatus === ModerationStatus.FLAGGED) {
+      this.eventEmitter.emit('moderation.requires-review', {
+        confessionId: result.confessionId,
+        score: payload.moderationScore,
+        flags: payload.moderationFlags,
+      });
+    }
 
-//   @OnEvent('moderation.requires-review')
-//   async handleRequiresReview(event: RequiresReviewEvent) {
-//     this.logger.log(
-//       `Content flagged for review - Confession: ${event.confessionId}, ` +
-//       `Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
-//     );
+    this.logger.log(
+      `Processed moderation webhook for confession ${payload.confessionId}`,
+    );
 
-//     // TODO: Add to moderation queue
-//     // TODO: Send notification to moderators (lower priority)
-//   }
-// }
+    return {
+      success: true,
+      confessionId: result.confessionId,
+      status: payload.moderationStatus,
+      isIdempotent: false,
+    };
+  }
+
+  private buildDeliveryHash(payload: string): string {
+    return crypto.createHash('sha256').update(payload).digest('hex');
+  }
+
+  private verifySignature(payload: string, signature: string): boolean {
+    if (!this.webhookSecret || !signature) {
+      return false;
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(payload)
+      .digest('hex');
+
+    if (signature.length !== expectedSignature.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature),
+    );
+  }
+}

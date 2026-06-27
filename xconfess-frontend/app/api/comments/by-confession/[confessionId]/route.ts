@@ -1,4 +1,8 @@
-const BASE_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+import { createApiErrorResponse } from "@/lib/apiErrorHandler";
+import { buildProxyErrorResponse, internalProxyErrorResponse } from "@/app/lib/utils/proxyError";
+import { getApiBaseUrl } from "@/app/lib/config";
+
+const BASE_API_URL = getApiBaseUrl();
 
 export async function GET(
   _request: Request,
@@ -106,16 +110,13 @@ export async function GET(
         });
       }
 
-      const err = await response.json().catch(() => ({}));
-      return new Response(
-        JSON.stringify({
-          message: err.message || "Failed to fetch comments",
-        }),
-        {
+      const errBody = await response.json().catch(() => ({}));
+      return createApiErrorResponse(errBody, {
           status: response.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+          fallbackMessage: "Failed to fetch comments",
+          upstreamResponse: response,
+          route: "GET /api/comments/by-confession/[confessionId]"
+        });
     }
 
     const data = await response.json();
@@ -155,13 +156,26 @@ export async function GET(
         : [],
     }));
 
-    // hasMore: if limit was requested and we received >= limit, assume more pages
-    const hasMore = limit ? comments.length >= Number(limit) : false;
+    const hasMore =
+      typeof data.hasMore === "boolean"
+        ? data.hasMore
+        : typeof data.meta?.hasMore === "boolean"
+          ? data.meta.hasMore
+          : limit
+            ? comments.length >= Number(limit)
+            : false;
 
-    return new Response(JSON.stringify({ comments, hasMore }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        comments,
+        hasMore,
+        nextCursor: data.nextCursor ?? data.meta?.nextCursor ?? null,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     const isDemoMode =
       process.env.NODE_ENV === "development" ||
@@ -228,10 +242,6 @@ export async function GET(
       });
     }
 
-    console.error("Error fetching comments:", error);
-    return new Response(JSON.stringify({ message: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return internalProxyErrorResponse({ route: "GET /api/comments/by-confession/[confessionId]" }, error);
   }
 }

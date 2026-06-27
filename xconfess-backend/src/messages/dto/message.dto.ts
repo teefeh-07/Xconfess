@@ -6,7 +6,11 @@ export class CreateMessageDto {
   @IsUUID()
   confession_id: string;
 
-  @ApiProperty({ description: 'Message content', minLength: 1, maxLength: 1000 })
+  @ApiProperty({
+    description: 'Message content',
+    minLength: 1,
+    maxLength: 1000,
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(1000)
@@ -23,14 +27,4 @@ export class ReplyMessageDto {
   @MinLength(1)
   @MaxLength(1000)
   reply: string;
-}
-
-export class GetMessagesQueryDto {
-  @ApiProperty({ description: 'UUID of the confession thread' })
-  @IsUUID()
-  confession_id: string;
-
-  @ApiProperty({ description: 'UUID of the sender anonymous user' })
-  @IsUUID()
-  sender_id: string;
 }

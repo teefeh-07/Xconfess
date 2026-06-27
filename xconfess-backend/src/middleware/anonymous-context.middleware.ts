@@ -13,28 +13,34 @@ export class AnonymousContextMiddleware implements NestMiddleware {
   constructor(
     @Inject(AnonymousUserService)
     private readonly anonymousUserService: AnonymousUserService,
-  ) { }
+  ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
     // Only add anonymous context for authenticated users
-    const authReq = req as Request & { user?: RequestUser };
+    const authReq = req as Request & { 
+      user?: RequestUser;
+      anonymousContextId?: string;
+      anonymousUser?: any;
+    };
     if (authReq.user) {
       try {
         // Get or create anonymous context for this user session
-        const anonymousUser = await this.getOrCreateAnonymousContext(authReq.user.id);
+        const anonymousUser = await this.getOrCreateAnonymousContext(
+          authReq.user.id,
+        );
         const anonymousContextId = `${this.ANONYMOUS_CONTEXT_PREFIX}${anonymousUser.id}`;
 
         // Add the header to the response (instead of mutating request headers)
         res.setHeader(this.ANONYMOUS_CONTEXT_HEADER, anonymousContextId);
 
         // Store the anonymous context ID in the request object for later use
-        req['anonymousContextId'] = anonymousContextId;
-        req['anonymousUser'] = anonymousUser;
+        authReq['anonymousContextId'] = anonymousContextId;
+        authReq['anonymousUser'] = anonymousUser;
       } catch (error) {
         // Fallback: generate a temporary context ID if service fails
         const fallbackId = this.generateAnonymousContextId();
         res.setHeader(this.ANONYMOUS_CONTEXT_HEADER, fallbackId);
-        req['anonymousContextId'] = fallbackId;
+        authReq['anonymousContextId'] = fallbackId;
       }
     }
 
@@ -42,11 +48,14 @@ export class AnonymousContextMiddleware implements NestMiddleware {
   }
 
   private async getOrCreateAnonymousContext(userId: number) {
-    return this.anonymousUserService.getOrCreateForUserSession(userId, this.SESSION_WINDOW_HOURS);
+    return this.anonymousUserService.getOrCreateForUserSession(
+      userId,
+      this.SESSION_WINDOW_HOURS,
+    );
   }
 
   private generateAnonymousContextId(): string {
     // Fallback UUID generation for error scenarios
     return `${this.ANONYMOUS_CONTEXT_PREFIX}${uuidv4()}`;
   }
-} 
+}

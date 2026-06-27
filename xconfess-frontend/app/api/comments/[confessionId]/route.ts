@@ -1,4 +1,7 @@
-const BASE_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+import { createApiErrorResponse } from "@/lib/apiErrorHandler";
+import { getApiBaseUrl } from "@/app/lib/config";
+
+const BASE_API_URL = getApiBaseUrl();
 
 export async function POST(
   request: Request,
@@ -8,15 +11,16 @@ export async function POST(
   let content = "";
   let anonymousContextId = "";
   let parentId: unknown = null;
+  let correlationId = "";
 
   try {
     const { confessionId } = await context.params;
     if (!confessionId) {
-      return new Response(
-        JSON.stringify({ message: "Confession ID is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return createApiErrorResponse("Confession ID is required", { status: 400 });
     }
+
+    correlationId =
+      request.headers.get("X-Correlation-ID") ?? crypto.randomUUID();
 
     body = await request.json().catch(() => ({}));
     content = (body.content ?? body.message) as string;
@@ -30,13 +34,14 @@ export async function POST(
       typeof content !== "string" ||
       content.trim().length === 0
     ) {
-      return new Response(
-        JSON.stringify({ message: "Comment content is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return createApiErrorResponse("Comment content is required", {
+        status: 400,
+        correlationId,
+      });
     }
 
     const authHeader = request.headers.get("Authorization");
+    const cookieHeader = request.headers.get("Cookie");
     const url = `${BASE_API_URL}/comments/${confessionId}`;
     const payload: Record<string, unknown> = {
       content: content.trim(),
@@ -48,7 +53,9 @@ export async function POST(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Correlation-ID": correlationId,
         ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -78,26 +85,19 @@ export async function POST(
           headers: {
             "Content-Type": "application/json",
             "X-Demo-Mode": "true",
+            "X-Correlation-ID": correlationId,
           },
         });
       }
 
-      const err = await response.json().catch(() => ({}));
-      if (response.status === 401) {
-        return new Response(
-          JSON.stringify({ message: "Please sign in to comment" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      return new Response(
-        JSON.stringify({
-          message: err.message || "Failed to post comment",
-        }),
-        {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      const err = await response.json().catch(() => ({} as { message?: string }));
+      return createApiErrorResponse(err, {
+        status: response.status,
+          upstreamResponse: response,
+        fallbackMessage: "Failed to post comment",
+        correlationId,
+        route: "POST /api/comments/[confessionId]"
+      });
     }
 
     const data = await response.json();
@@ -112,7 +112,10 @@ export async function POST(
 
     return new Response(JSON.stringify(comment), {
       status: 201,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Correlation-ID": correlationId,
+      },
     });
   } catch (error) {
     const isDemoMode =
@@ -122,7 +125,7 @@ export async function POST(
     if (isDemoMode) {
       console.warn("Backend unreachable, returning demo comment for testing");
 
-      const { confessionId } = await context.params;
+      const { confessionId } = await context.params.catch(() => ({ confessionId: "unknown" }));
       // Use the body that was already read at the top
       const finalParentId = parentId != null ? Number(parentId) : null;
 
@@ -141,14 +144,15 @@ export async function POST(
         headers: {
           "Content-Type": "application/json",
           "X-Demo-Mode": "true",
+          ...(correlationId ? { "X-Correlation-ID": correlationId } : {}),
         },
       });
     }
 
-    console.error("Error posting comment:", error);
-    return new Response(JSON.stringify({ message: "Internal server error" }), {
+    return createApiErrorResponse(error, {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      correlationId: correlationId || undefined,
+      route: "POST /api/comments/[confessionId]"
     });
   }
 }

@@ -2,40 +2,30 @@
  * Normalized API error for UI consumption.
  * Use normalizeApiError() to turn fetch Response or Error into this shape.
  */
+import {
+  STATUS_ERROR_MESSAGES,
+  STATUS_ERROR_CODES,
+  toAppError,
+} from '@/app/lib/utils/errorHandler';
+
 export interface ApiError {
   message: string;
   code?: string;
   status?: number;
+  retryAfter?: number | null;
+  requestId?: string;
+  timestamp?: string;
 }
 
-const STATUS_MESSAGES: Record<number, string> = {
-  400: "Invalid request. Please check your input.",
-  401: "Your session has expired. Please log in again.",
-  403: "You do not have permission to perform this action.",
-  404: "The requested resource was not found.",
-  409: "This action conflicts with existing data.",
-  422: "Please check your input and try again.",
-  429: "Too many requests. Please wait a moment and try again.",
-  500: "Server error. Please try again later.",
-  502: "Bad gateway. Please try again later.",
-  503: "Service unavailable. Please try again later.",
-};
-
-const STATUS_CODES: Record<number, string> = {
-  400: "VALIDATION_ERROR",
-  401: "UNAUTHORIZED",
-  403: "FORBIDDEN",
-  404: "NOT_FOUND",
-  409: "CONFLICT",
-  422: "UNPROCESSABLE_ENTITY",
-  429: "TOO_MANY_REQUESTS",
-  500: "SERVER_ERROR",
-  502: "BAD_GATEWAY",
-  503: "SERVICE_UNAVAILABLE",
-};
+// Keep the local map as a stable override; share default map from errorHandler
+const STATUS_MESSAGES = STATUS_ERROR_MESSAGES;
+const STATUS_CODES = STATUS_ERROR_CODES;
 
 /**
  * Normalizes a failed fetch Response or an Error into a consistent ApiError for UI.
+ * For 429 responses, preserves retryAfter, requestId, and timestamp from the
+ * normalized backend shape, falling back to response headers when body fields
+ * are absent.
  */
 export async function normalizeApiError(
   responseOrError: Response | Error
@@ -43,28 +33,57 @@ export async function normalizeApiError(
   if (responseOrError instanceof Response) {
     const status = responseOrError.status;
     let message = STATUS_MESSAGES[status];
+    let retryAfter: number | null = null;
+    let requestId: string | undefined;
+    let timestamp: string | undefined;
+
     try {
       const body = await responseOrError.json();
       const raw = (body && (body.message ?? body.error ?? body.msg)) ?? null;
-      if (typeof raw === "string" && raw.length > 0) message = raw;
+      if (typeof raw === 'string' && raw.length > 0) message = raw;
+
+      if (status === 429) {
+        // Prefer body fields from normalized backend shape
+        if (typeof body.retryAfter === 'number') {
+          retryAfter = body.retryAfter;
+        } else {
+          // Fall back to Retry-After header
+          const headerVal = responseOrError.headers.get('retry-after');
+          retryAfter = headerVal ? parseInt(headerVal, 10) : null;
+        }
+
+        requestId =
+          body.requestId ??
+          responseOrError.headers.get('x-request-id') ??
+          responseOrError.headers.get('x-correlation-id') ??
+          undefined;
+
+        timestamp = body.timestamp ?? undefined;
+      }
     } catch {
-      // keep default message
+      // Body not JSON — fall back to headers
+      if (status === 429) {
+        const headerVal = responseOrError.headers.get('retry-after');
+        retryAfter = headerVal ? parseInt(headerVal, 10) : null;
+        requestId = responseOrError.headers.get('x-request-id') ?? undefined;
+      }
     }
+
     return {
-      message: message ?? "An error occurred. Please try again.",
-      code: STATUS_CODES[status] ?? "REQUEST_FAILED",
+      message: message ?? 'An error occurred. Please try again.',
+      code: STATUS_CODES[status] ?? 'REQUEST_FAILED',
       status,
+      ...(status === 429 ? { retryAfter, requestId, timestamp } : {}),
     };
   }
 
   const err = responseOrError as Error;
-  const message =
-    err.name === "AbortError"
-      ? "Request was cancelled."
-      : err.message || "An unexpected error occurred. Please try again.";
+  const appError = toAppError(err);
   return {
-    message,
-    code: err.name === "TypeError" && err.message?.includes("fetch") ? "NETWORK_ERROR" : "UNKNOWN_ERROR",
+    message: appError.message,
+    code: appError.code,
+    status: appError.statusCode,
+    retryAfter: appError.retryAfter ?? null,
   };
 }
 
@@ -73,8 +92,15 @@ export async function normalizeApiError(
  */
 export function getDisplayMessage(error: unknown): string {
   if (error instanceof Error) {
-    if (error.name === "AbortError") return "Request was cancelled.";
-    return error.message || "Something went wrong. Please try again.";
+    if (error.name === 'AbortError') return 'Request was cancelled.';
+    return error.message || 'Something went wrong. Please try again.';
   }
-  return "Something went wrong. Please try again.";
+  return 'Something went wrong. Please try again.';
+}
+
+/**
+ * Returns true when a fetch Response is a rate-limit 429.
+ */
+export function isRateLimitResponse(res: Response): boolean {
+  return res.status === 429;
 }

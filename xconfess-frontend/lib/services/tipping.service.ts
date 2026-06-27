@@ -3,14 +3,46 @@
  * Handles XLM tipping functionality for confessions
  */
 
-import * as StellarSDK from '@stellar/stellar-sdk';
+import {
+  Networks,
+  Horizon,
+  Keypair,
+  TransactionBuilder,
+  Operation,
+  Asset,
+  BASE_FEE,
+} from "@stellar/stellar-sdk";
+import { ActivityStatus } from "@/app/lib/types/activity";
+import { getApiBaseUrl } from "@/app/lib/config";
+import {
+  isFreighterInstalled,
+  freighterGetPublicKey,
+  freighterSignTransaction,
+} from "../wallet/freighterAdapter";
 
-const MIN_TIP_AMOUNT = 0.1; // Minimum tip in XLM
+const MIN_TIP_AMOUNT = 0.1;
+
+// -------------------- Types --------------------
+
+export type NetworkKind = "testnet" | "mainnet" | "unknown";
+export type TipStatus = "pending" | "confirmed" | "failed" | "stale_pending";
 
 export interface TipStats {
   totalAmount: number;
   totalCount: number;
   averageAmount: number;
+}
+
+export interface VerifyTipParams {
+  confessionId: string;
+  signedXdr: string;
+}
+
+export interface TipVerificationResult {
+  tipId: string;
+  status: TipStatus;
+  confirmedAt?: string;
+  failureReason?: string;
 }
 
 export interface Tip {
@@ -22,53 +54,110 @@ export interface Tip {
   createdAt: string;
 }
 
-/**
- * Get Stellar network configuration
- */
-function getStellarNetwork(): StellarSDK.Networks {
-  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'testnet';
-  return network === 'mainnet'
-    ? StellarSDK.Networks.PUBLIC
-    : StellarSDK.Networks.TESTNET;
+export interface VerifyTipResult {
+  success: boolean;
+  tip?: Tip;
+  error?: string;
+  isIdempotent?: boolean;
 }
 
-/**
- * Get Stellar Horizon server
- */
-function getStellarServer(): StellarSDK.Horizon.Server {
+// -------------------- Helpers --------------------
+
+function getStellarNetwork(): string {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet";
+  return network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+}
+
+function getStellarServer(): Horizon.Server {
   const horizonUrl =
     process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
-    'https://horizon-testnet.stellar.org';
-  return new StellarSDK.Horizon.Server(horizonUrl);
+    "https://horizon-testnet.stellar.org";
+  return new Horizon.Server(horizonUrl);
 }
 
-/**
- * Check if Freighter wallet is available
- */
-export async function isFreighterAvailable(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-  try {
-    const freighter = (window as any).freighterApi;
-    return !!freighter;
-  } catch {
-    return false;
+function classifyTipError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("reject") ||
+    normalized.includes("declin") ||
+    normalized.includes("denied") ||
+    normalized.includes("cancel")
+  ) {
+    return "Transaction was rejected in your wallet.";
   }
+
+  if (normalized.includes("timeout")) return "Wallet request timed out.";
+  if (normalized.includes("network mismatch")) return message;
+  if (normalized.includes("insufficient")) return "Insufficient XLM balance.";
+
+  return message || "Failed to send tip";
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tippingApiUrl(path: string): string {
+  return `${getApiBaseUrl().replace(/\/$/, "")}${path}`;
+}
+
+function getResponseMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const message = (body as { message?: unknown }).message;
+  if (Array.isArray(message)) return message.join(" ");
+  return typeof message === "string" ? message : undefined;
+}
+
+function isReplayResponse(status: number, message = ""): boolean {
+  if (status !== 400 && status !== 409) return false;
+  return /already (verified|recorded|processed)|idempotent|duplicate|replay/i.test(
+    message,
+  );
+}
+
+function shouldPollVerification(status: number, message = ""): boolean {
+  return (
+    status === 404 ||
+    status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    status >= 500 ||
+    /pending|not (yet )?(found|confirmed)|try again|timeout|temporar/i.test(
+      message,
+    )
+  );
+}
+
+// -------------------- Fake Checker --------------------
+
 /**
- * Send a tip to a confession
- * @param confessionId - The ID of the confession to tip
- * @param amount - The amount in XLM to tip (minimum 0.1)
- * @param recipientAddress - The Stellar address of the confession creator
- * @returns Transaction hash if successful
+ * Fake status checker — replace with actual backend or Stellar SDK call
  */
+export const checkTransactionStatus = async (): Promise<ActivityStatus> => {
+  await sleep(2000);
+
+  const random = Math.random();
+  if (random > 0.7) return "confirmed";
+  if (random > 0.4) return "failed";
+  return "submitted";
+};
+
+// -------------------- Wallet Helpers --------------------
+
+export async function isFreighterAvailable(): Promise<boolean> {
+  return isFreighterInstalled();
+}
+
+// -------------------- Send Tip --------------------
+
 export async function sendTip(
   confessionId: string,
   amount: number,
   recipientAddress: string,
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    // Validate minimum tip amount
     if (amount < MIN_TIP_AMOUNT) {
       return {
         success: false,
@@ -76,179 +165,148 @@ export async function sendTip(
       };
     }
 
-    // Check if Freighter is available
-    const freighter = (window as any).freighterApi;
-    if (!freighter) {
-      return {
-        success: false,
-        error: 'Freighter wallet not found. Please install Freighter extension.',
-      };
+    if (!isFreighterInstalled()) {
+      return { success: false, error: "Freighter wallet not found" };
     }
 
-    // Get public key from wallet
-    const publicKey = await freighter.getPublicKey();
-    if (!publicKey) {
-      return {
-        success: false,
-        error: 'Failed to get public key from wallet',
-      };
+    let publicKey: string;
+    try {
+      publicKey = await freighterGetPublicKey();
+    } catch {
+      return { success: false, error: "Freighter wallet not found" };
     }
 
     const network = getStellarNetwork();
     const server = getStellarServer();
 
-    // Load sender account
     const senderAccount = await server.loadAccount(publicKey);
 
-    // Validate recipient address format
+    // Validate recipient
     try {
-      StellarSDK.Keypair.fromPublicKey(recipientAddress);
+      Keypair.fromPublicKey(recipientAddress);
     } catch {
-      return {
-        success: false,
-        error: 'Invalid recipient address',
-      };
+      return { success: false, error: "Invalid recipient address" };
     }
 
-    // Build payment transaction
-    const transactionBuilder = new StellarSDK.TransactionBuilder(senderAccount, {
-      fee: StellarSDK.BASE_FEE,
+    const transaction = new TransactionBuilder(senderAccount, {
+      fee: BASE_FEE,
       networkPassphrase: network,
     })
       .addOperation(
-        StellarSDK.Operation.payment({
+        Operation.payment({
           destination: recipientAddress,
-          asset: StellarSDK.Asset.native(),
+          asset: Asset.native(),
           amount: amount.toString(),
         }),
       )
-      .setTimeout(30);
+      .setTimeout(30)
+      .build();
 
-    // Optional: Add memo with confession ID for tracking
-    // Remove this line for full anonymity (no link between tip and confession on-chain)
-    // transactionBuilder.addMemo(StellarSDK.Memo.text(`tip:${confessionId}`));
-
-    const transaction = transactionBuilder.build();
-
-    // Sign transaction with Freighter
-    const signedTx = await freighter.signTransaction(transaction.toXDR(), {
+    const signedXDR = await freighterSignTransaction(
+      transaction.toXDR(),
       network,
-    });
-
-    if (!signedTx) {
-      return {
-        success: false,
-        error: 'Failed to sign transaction',
-      };
-    }
-
-    // Submit transaction
-    const tx = StellarSDK.TransactionBuilder.fromXDR(signedTx, network);
+    );
+    const tx = TransactionBuilder.fromXDR(signedXDR, network);
     const result = await server.submitTransaction(tx);
 
-    if (!result.hash) {
-      return {
-        success: false,
-        error: 'Transaction submitted but no hash returned',
-      };
-    }
+    if (!result.hash)
+      return { success: false, error: "No transaction hash returned" };
 
-    // Verify transaction was successful
-    if (result.successful !== true) {
-      return {
-        success: false,
-        error: 'Transaction failed on Stellar network',
-      };
-    }
-
-    return {
-      success: true,
-      txHash: result.hash,
-    };
-  } catch (error: any) {
-    console.error('Failed to send tip:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to send tip',
-    };
-  }
-}
-
-/**
- * Get tips for a confession
- */
-export async function getTips(confessionId: string): Promise<Tip[]> {
-  try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-    const response = await fetch(`${apiUrl}/confessions/${confessionId}/tips`);
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch tips');
-    }
-
-    return await response.json();
+    return { success: true, txHash: result.hash };
   } catch (error) {
-    console.error('Failed to get tips:', error);
-    return [];
+    console.error(error);
+    return { success: false, error: classifyTipError(error) };
   }
 }
 
-/**
- * Get tip statistics for a confession
- */
-export async function getTipStats(confessionId: string): Promise<TipStats | null> {
+// -------------------- Verify Tip --------------------
+
+export async function verifyTip(
+  confessionId: string,
+  txHash: string,
+): Promise<VerifyTipResult> {
+  const maxAttempts = 2;
+  let lastError = "Backend verification is still pending.";
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch(
+        tippingApiUrl(`/confessions/${confessionId}/tips/verify`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ txId: txHash }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      const message = getResponseMessage(data);
+
+      // Replaying the same verified transaction is a successful, stable state.
+      if (res.ok || isReplayResponse(res.status, message)) {
+        return {
+          success: true,
+          tip: (data as { tip?: Tip }).tip,
+          isIdempotent:
+            isReplayResponse(res.status, message) ||
+            (data as { isIdempotent?: boolean }).isIdempotent,
+        };
+      }
+
+      lastError = message || `Verification failed (${res.status})`;
+      if (!shouldPollVerification(res.status, lastError)) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < maxAttempts - 1) await sleep(1000);
+  }
+
+  return { success: false, error: lastError };
+}
+
+// -------------------- Get Tip Stats --------------------
+
+export async function getTipStats(
+  confessionId: string,
+): Promise<TipStats | null> {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-    const response = await fetch(
-      `${apiUrl}/confessions/${confessionId}/tips/stats`,
+    const res = await fetch(
+      tippingApiUrl(`/confessions/${confessionId}/tips/stats`),
     );
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch tip stats');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Failed to get tip stats:', error);
+    if (!res.ok) return null;
+    return (await res.json()) as TipStats;
+  } catch {
     return null;
   }
 }
 
-/**
- * Verify and record a tip transaction
- */
-export async function verifyTip(
-  confessionId: string,
-  txHash: string,
-): Promise<{ success: boolean; tip?: Tip; error?: string }> {
-  try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-    const response = await fetch(
-      `${apiUrl}/confessions/${confessionId}/tips/verify`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ txId: txHash }),
-      },
+// -------------------- Backend Integration --------------------
+
+export async function verifySignedTip(
+  params: VerifyTipParams,
+): Promise<TipVerificationResult> {
+  const response = await fetch("/api/tips/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      body?.message ?? `Tip verification failed (${response.status})`,
     );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || 'Failed to verify tip');
-    }
-
-    const tip = await response.json();
-    return {
-      success: true,
-      tip,
-    };
-  } catch (error: any) {
-    console.error('Failed to verify tip:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to verify tip',
-    };
   }
+
+  return response.json() as Promise<TipVerificationResult>;
+}
+
+export async function fetchTipStatus(
+  tipId: string,
+): Promise<TipVerificationResult> {
+  const response = await fetch(`/api/tips/${tipId}/status`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tip status (${response.status})`);
+  }
+  return response.json() as Promise<TipVerificationResult>;
 }

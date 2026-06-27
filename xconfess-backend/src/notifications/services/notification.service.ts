@@ -1,11 +1,17 @@
-import { Injectable, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
-import { Notification, NotificationType } from '../entities/notification.entity';
+import {
+  Notification,
+  NotificationType,
+} from '../entities/notification.entity';
 import { NotificationPreference } from '../entities/notification-preference.entity';
+import { NOTIFICATION_QUEUE } from '../processors/notification.processor';
 import { CreateNotificationDto, NotificationQueryDto } from '../dto/notification.dto';
-// removed: using Inject from @nestjs/common instead of @nestjs/bull
-import { Queue } from 'bull';
+import { Queue } from 'bullmq';
+import { AppLogger } from '../../logger/logger.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class NotificationService {
@@ -14,11 +20,44 @@ export class NotificationService {
     private notificationRepository: Repository<Notification>,
     @InjectRepository(NotificationPreference)
     private preferenceRepository: Repository<NotificationPreference>,
-    @Inject('notifications')
+    @InjectQueue(NOTIFICATION_QUEUE)
     private notificationQueue: Queue,
+    private readonly appLogger: AppLogger,
+    private readonly configService: ConfigService,
   ) {}
 
-  async createNotification(dto: CreateNotificationDto): Promise<Notification | null> {
+  async enqueueNotification(
+    type: string,
+    payload: any,
+    jobId?: string,
+  ): Promise<void> {
+    if (this.configService.get<string>('ENABLE_BACKGROUND_JOBS') !== 'true') {
+      this.appLogger.warn(
+        `enqueueNotification skipped (jobs disabled): type=${type}`,
+        'NotificationService',
+      );
+      return;
+    }
+
+    await this.notificationQueue.add(
+      'send-notification',
+      {
+        ...payload,
+        type,
+      },
+      { jobId },
+    );
+
+    this.appLogger.incrementCounter('notification_queue_enqueued_total', 1, {
+      queue: NOTIFICATION_QUEUE,
+      jobName: 'send-notification',
+      notificationType: type,
+    });
+  }
+
+  async createNotification(
+    dto: CreateNotificationDto,
+  ): Promise<Notification | null> {
     const preference = await this.getUserPreference(dto.userId);
 
     // Check if user wants this type of notification
@@ -34,11 +73,25 @@ export class NotificationService {
     const notification = this.notificationRepository.create(dto);
     await this.notificationRepository.save(notification);
 
-    // Queue for email notification if enabled
-    if (preference.enableEmailNotifications && this.shouldSendEmail(preference, dto.type)) {
-      await this.notificationQueue.add('send-email', {
-        notificationId: notification.id,
-        userId: dto.userId,
+    // Queue for email notification if enabled and background jobs are active
+    if (
+      preference.enableEmailNotifications &&
+      this.shouldSendEmail(preference, dto.type) &&
+      this.configService.get<string>('ENABLE_BACKGROUND_JOBS') === 'true'
+    ) {
+      await this.notificationQueue.add(
+        'send-notification',
+        {
+          notificationId: notification.id,
+          userId: dto.userId,
+        },
+        { jobId: `email-${notification.id}` },
+      );
+
+      this.appLogger.incrementCounter('notification_queue_enqueued_total', 1, {
+        queue: NOTIFICATION_QUEUE,
+        jobName: 'send-notification',
+        notificationType: dto.type,
       });
     }
 
@@ -52,7 +105,7 @@ export class NotificationService {
     messagePreview: string,
   ): Promise<void> {
     const preference = await this.getUserPreference(userId);
-    
+
     // Check for recent notifications to determine if we should batch
     const recentNotifications = await this.getRecentMessageNotifications(
       userId,
@@ -61,7 +114,11 @@ export class NotificationService {
 
     if (recentNotifications.length >= preference.batchThreshold - 1) {
       // Create batch notification
-      await this.createBatchNotification(userId, recentNotifications, messageId);
+      await this.createBatchNotification(
+        userId,
+        recentNotifications,
+        messageId,
+      );
     } else {
       // Create individual notification
       await this.createNotification({
@@ -83,7 +140,7 @@ export class NotificationService {
     newMessageId: string,
   ): Promise<void> {
     const messageIds = [
-      ...recentNotifications.map(n => n.metadata?.messageId).filter(Boolean),
+      ...recentNotifications.map((n) => n.metadata?.messageId).filter(Boolean),
       newMessageId,
     ];
 
@@ -103,7 +160,7 @@ export class NotificationService {
 
     // Mark individual notifications as read to avoid duplicates
     await this.notificationRepository.update(
-      recentNotifications.map(n => n.id),
+      recentNotifications.map((n) => n.id),
       { isRead: true, readAt: new Date() },
     );
   }
@@ -111,7 +168,11 @@ export class NotificationService {
   async getUserNotifications(
     userId: string,
     query: NotificationQueryDto,
-  ): Promise<{ notifications: Notification[]; total: number; unreadCount: number }> {
+  ): Promise<{
+    notifications: Notification[];
+    total: number;
+    unreadCount: number;
+  }> {
     const { page, limit, unreadOnly } = query;
     const pageNum = page && page > 0 ? page : 1;
     const limitNum = limit && limit > 0 ? limit : 20;
@@ -122,12 +183,13 @@ export class NotificationService {
       whereClause.isRead = false;
     }
 
-    const [notifications, total] = await this.notificationRepository.findAndCount({
-      where: whereClause,
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limitNum,
-    });
+    const [notifications, total] =
+      await this.notificationRepository.findAndCount({
+        where: whereClause,
+        order: { createdAt: 'DESC' },
+        skip,
+        take: limitNum,
+      });
 
     const unreadCount = await this.notificationRepository.count({
       where: { userId, isRead: false },
@@ -136,7 +198,10 @@ export class NotificationService {
     return { notifications, total, unreadCount };
   }
 
-  async markAsRead(notificationId: string, userId: string): Promise<Notification> {
+  async markAsRead(
+    notificationId: string,
+    userId: string,
+  ): Promise<Notification> {
     const notification = await this.notificationRepository.findOne({
       where: { id: notificationId, userId },
     });
@@ -184,7 +249,7 @@ export class NotificationService {
     windowMinutes: number,
   ): Promise<Notification[]> {
     const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000);
-    
+
     return this.notificationRepository.find({
       where: {
         userId,
@@ -216,7 +281,8 @@ export class NotificationService {
     preference: NotificationPreference,
     type: NotificationType,
   ): boolean {
-    if (!preference.enableEmailNotifications || !preference.emailAddress) return false;
+    if (!preference.enableEmailNotifications || !preference.emailAddress)
+      return false;
 
     switch (type) {
       case NotificationType.NEW_MESSAGE:
@@ -229,7 +295,11 @@ export class NotificationService {
   }
 
   private isQuietHours(preference: NotificationPreference): boolean {
-    if (!preference.enableQuietHours || !preference.quietHoursStart || !preference.quietHoursEnd) {
+    if (
+      !preference.enableQuietHours ||
+      !preference.quietHoursStart ||
+      !preference.quietHoursEnd
+    ) {
       return false;
     }
 
@@ -237,6 +307,9 @@ export class NotificationService {
     const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS
 
     // Simple time comparison (can be enhanced with timezone support)
-    return currentTime >= preference.quietHoursStart && currentTime <= preference.quietHoursEnd;
+    return (
+      currentTime >= preference.quietHoursStart &&
+      currentTime <= preference.quietHoursEnd
+    );
   }
 }

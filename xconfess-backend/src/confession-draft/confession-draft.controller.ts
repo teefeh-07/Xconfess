@@ -22,7 +22,18 @@ export class ConfessionDraftController {
 
   @Post()
   create(@GetUser('id') userId: number, @Body() dto: CreateConfessionDraftDto) {
-    return this.service.createDraft(userId, dto.content, dto.scheduledFor, dto.timezone);
+    return this.service.createDraft(
+      userId,
+      dto.content,
+      dto.category,
+      dto.scheduledFor,
+      dto.timezone,
+    );
+  }
+
+  @Post('autosave')
+  autoSave(@GetUser('id') userId: number, @Body() dto: UpdateConfessionDraftDto) {
+    return this.service.autoSaveDraft(userId, dto);
   }
 
   @Get()
@@ -36,8 +47,26 @@ export class ConfessionDraftController {
   }
 
   @Patch(':id')
-  update(@GetUser('id') userId: number, @Param('id') id: string, @Body() dto: UpdateConfessionDraftDto) {
-    return this.service.updateDraft(userId, id, dto.content);
+  update(
+    @GetUser('id') userId: number,
+    @Param('id') id: string,
+    @Body() dto: UpdateConfessionDraftDto,
+  ) {
+    return this.service.updateDraft(userId, id, dto);
+  }
+
+  @Patch(':id/autosave')
+  autoSaveExisting(
+    @GetUser('id') userId: number,
+    @Param('id') id: string,
+    @Body() dto: UpdateConfessionDraftDto,
+  ) {
+    return this.service.autoSaveDraft(userId, { ...dto, id });
+  }
+
+  @Delete()
+  removeAll(@GetUser('id') userId: number) {
+    return this.service.deleteAllDrafts(userId);
   }
 
   @Delete(':id')
@@ -46,8 +75,17 @@ export class ConfessionDraftController {
   }
 
   @Post(':id/schedule')
-  schedule(@GetUser('id') userId: number, @Param('id') id: string, @Body() dto: ScheduleConfessionDraftDto) {
-    return this.service.scheduleDraft(userId, id, dto.scheduledFor, dto.timezone);
+  schedule(
+    @GetUser('id') userId: number,
+    @Param('id') id: string,
+    @Body() dto: ScheduleConfessionDraftDto,
+  ) {
+    return this.service.scheduleDraft(
+      userId,
+      id,
+      dto.scheduledFor,
+      dto.timezone,
+    );
   }
 
   @Post(':id/cancel')

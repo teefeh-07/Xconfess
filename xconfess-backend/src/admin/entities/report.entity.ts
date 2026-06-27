@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { AnonymousConfession } from '../../confession/entities/confession.entity';
 import { User } from '../../user/entities/user.entity';
+import { AnonymousUser } from '../../user/entities/anonymous-user.entity';
 
 export enum ReportType {
   SPAM = 'spam',
@@ -43,12 +44,19 @@ export class Report {
   @JoinColumn({ name: 'confession_id' })
   confession: AnonymousConfession;
 
-  @Column({ name: 'reporter_id', nullable: true })
+  @Column({ name: 'reporter_id', type: 'int', nullable: true })
   reporterId: number | null;
 
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'reporter_id' })
   reporter: User | null;
+
+  @Column({ name: 'anonymous_reporter_id', type: 'uuid', nullable: true })
+  anonymousReporterId: string | null;
+
+  @ManyToOne(() => AnonymousUser, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'anonymous_reporter_id' })
+  anonymousReporter: AnonymousUser | null;
 
   @Column({
     type: 'enum',
@@ -66,20 +74,28 @@ export class Report {
   })
   status: ReportStatus;
 
-  @Column({ name: 'resolved_by', nullable: true })
+  @Column({ name: 'resolved_by', type: 'int', nullable: true })
   resolvedBy: number | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'resolved_by' })
   resolver: User | null;
 
-  @Column({ name: 'resolved_at', nullable: true })
+  @Column({ name: 'resolved_at', type: 'timestamp', nullable: true })
   resolvedAt: Date | null;
 
   @Column({ name: 'resolution_reason', type: 'text', nullable: true })
   resolutionNotes: string | null;
 
-  @Column({ name: 'idempotency_key', type: 'varchar', length: 255, nullable: true })
+  @Column({ name: 'template_id', type: 'int', nullable: true })
+  templateId: number | null;
+
+  @Column({
+    name: 'idempotency_key',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   @Index(['idempotency_key'])
   idempotencyKey: string | null;
 

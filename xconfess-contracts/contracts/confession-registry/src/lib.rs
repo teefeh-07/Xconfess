@@ -1,17 +1,29 @@
 #![no_std]
+#![allow(dead_code)]
+#![allow(deprecated)]
+#[cfg(test)]
+#[path = "confession_reg_auth.rs"]
+mod confession_reg_auth;
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env,
+    Symbol, Vec,
 };
+
+pub const MAX_AUTHOR_CONFESSIONS_PER_AUTHOR: u32 = 128;
+pub const REGISTRY_PAYLOAD_TOO_LONG: &str = "registry payload too long";
 
 #[path = "../../access_control.rs"]
 mod access_control;
+#[path = "../../emergency_pause/mod.rs"]
+mod emergency_pause;
 #[path = "../../error.rs"]
 mod error;
 #[path = "../../events.rs"]
-mod events;
+pub mod events;
 #[path = "../../governance/mod.rs"]
 mod governance;
+// mod confession_reg_auth;
 
 // ─── Data Types ───
 
@@ -42,6 +54,57 @@ pub struct Confession {
     pub status: ConfessionStatus,
 }
 
+#[contractevent(topics = ["confession_created"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfessionCreatedEvent {
+    #[topic]
+    pub id: u64,
+    pub event_version: u32,
+    pub nonce: u64,
+    pub timestamp: u64,
+    pub author: Address,
+    pub content_hash: BytesN<32>,
+    pub correlation_id: Option<Symbol>,
+}
+
+#[contractevent(topics = ["confession_updated"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfessionUpdatedEvent {
+    #[topic]
+    pub id: u64,
+    pub event_version: u32,
+    pub nonce: u64,
+    pub timestamp: u64,
+    pub old_status: ConfessionStatus,
+    pub new_status: ConfessionStatus,
+    pub correlation_id: Option<Symbol>,
+}
+
+#[contractevent(topics = ["confession_deleted"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfessionDeletedEvent {
+    #[topic]
+    pub id: u64,
+    pub event_version: u32,
+    pub nonce: u64,
+    pub timestamp: u64,
+    pub actor: Address,
+    pub correlation_id: Option<Symbol>,
+}
+
+/// Pagination result returned by `list_confessions`.
+///
+/// `has_next_page` is `true` when more items exist beyond this page.
+/// `next_cursor` is the ID to pass as `cursor` on the next call; it is
+/// `None` on the terminal page.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Page {
+    pub items: Vec<Confession>,
+    pub has_next_page: bool,
+    pub next_cursor: Option<u64>,
+}
+
 /// Storage keys used by the contract.
 #[contracttype]
 pub enum DataKey {
@@ -55,6 +118,49 @@ pub enum DataKey {
     AuthorConfessions(Address),
     /// Contract admin address.
     Admin,
+    /// Per-caller sequencing nonce for replay protection.
+    CallerNonce(Address),
+    /// Event nonce for confession events.
+    EventNonceConfession(u64),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ReplayError {
+    InvalidNonce = 1,
+}
+
+fn expected_nonce(env: &Env, caller: &Address) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::CallerNonce(caller.clone()))
+        .unwrap_or(1u64)
+}
+
+fn consume_nonce(env: &Env, caller: &Address, nonce: u64) -> Result<(), ReplayError> {
+    let expected = expected_nonce(env, caller);
+    if nonce != expected {
+        return Err(ReplayError::InvalidNonce);
+    }
+
+    env.storage()
+        .instance()
+        .set(&DataKey::CallerNonce(caller.clone()), &(expected + 1));
+    Ok(())
+}
+
+fn bump_confession_event_nonce(env: &Env, id: u64) -> u64 {
+    let key = DataKey::EventNonceConfession(id);
+    let next = env
+        .storage()
+        .instance()
+        .get(&key)
+        .unwrap_or(0u64)
+        .checked_add(1)
+        .expect("event nonce overflow");
+    env.storage().instance().set(&key, &next);
+    next
 }
 
 // ─── Contract ───
@@ -75,7 +181,7 @@ impl ConfessionRegistry {
         env.storage().instance().set(&DataKey::NextId, &1u64);
 
         // Also initialize common access control
-        access_control::init_owner(&env, &admin);
+        access_control::init_owner(&env, &admin).expect("owner initialization failed");
     }
 
     // ─── Governance ───
@@ -83,10 +189,16 @@ impl ConfessionRegistry {
     pub fn set_quorum(env: Env, threshold: u32) {
         let mut config = governance::get_config(&env);
         config.quorum_threshold = threshold;
-        governance::set_config(&env, config);
+        let owner = access_control::get_owner(&env)
+            .expect("owner must exist before configuring governance");
+        governance::set_config(&env, &owner, config);
     }
 
-    pub fn gov_propose(env: Env, proposer: Address, action: governance::model::CriticalAction) -> u64 {
+    pub fn gov_propose(
+        env: Env,
+        proposer: Address,
+        action: governance::model::CriticalAction,
+    ) -> u64 {
         governance::propose(&env, proposer, action)
     }
 
@@ -122,11 +234,8 @@ impl ConfessionRegistry {
         // Require author authorization
         author.require_auth();
 
-        // Check if paused
-        let paused: bool = env.storage().instance().get(&symbol_short!("paused")).unwrap_or(false);
-        if paused {
-            panic!("contract paused");
-        }
+        // Check if paused — use shared emergency pause module
+        emergency_pause::assert_not_paused(&env).unwrap_or_else(|err| panic!("{}", err as u32));
 
         // Enforce uniqueness on content_hash
         if env
@@ -137,15 +246,22 @@ impl ConfessionRegistry {
             panic!("confession with this content hash already exists");
         }
 
+        let mut author_ids: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AuthorConfessions(author.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+        if author_ids.len() >= MAX_AUTHOR_CONFESSIONS_PER_AUTHOR {
+            panic!("{}", REGISTRY_PAYLOAD_TOO_LONG);
+        }
+
         // Allocate ID
         let id: u64 = env
             .storage()
             .instance()
             .get(&DataKey::NextId)
             .unwrap_or(1u64);
-        env.storage()
-            .instance()
-            .set(&DataKey::NextId, &(id + 1));
+        env.storage().instance().set(&DataKey::NextId, &(id + 1));
 
         // Build record
         let confession = Confession {
@@ -166,22 +282,22 @@ impl ConfessionRegistry {
             .set(&DataKey::HashIndex(content_hash.clone()), &id);
 
         // Track author → confession index
-        let mut author_ids: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AuthorConfessions(author.clone()))
-            .unwrap_or_else(|| Vec::new(&env));
         author_ids.push_back(id);
         env.storage()
             .instance()
             .set(&DataKey::AuthorConfessions(author.clone()), &author_ids);
 
         // Emit event
-        let event_topic = Symbol::new(&env, "confession_created");
-        env.events().publish(
-            (event_topic, id),
-            (author, content_hash, timestamp),
-        );
+        ConfessionCreatedEvent {
+            id,
+            event_version: events::EVENT_VERSION_V1,
+            nonce: bump_confession_event_nonce(&env, id),
+            timestamp,
+            author,
+            content_hash,
+            correlation_id: None,
+        }
+        .publish(&env);
 
         id
     }
@@ -212,6 +328,55 @@ impl ConfessionRegistry {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
+    /// List confessions with cursor-based pagination.
+    ///
+    /// - `cursor`: exclusive lower bound (last seen ID). Pass `None` to start from the beginning.
+    /// - `limit`: maximum number of items to return (capped at 50).
+    ///
+    /// Returns a `Page<Confession>` with `has_next_page` and `next_cursor` so callers
+    /// can detect terminal pages without guessing.
+    pub fn list_confessions(env: Env, cursor: Option<u64>, limit: u32) -> Page {
+        let limit = limit.min(50) as u64;
+        let start = cursor.unwrap_or(0) + 1;
+        let total: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextId)
+            .unwrap_or(1u64)
+            .saturating_sub(1);
+
+        let mut items: Vec<Confession> = Vec::new(&env);
+        let mut id = start;
+        // Fetch up to limit+1 to detect whether a next page exists.
+        while id <= total && items.len() as u64 <= limit {
+            if let Some(c) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Confession>(&DataKey::Confession(id))
+            {
+                items.push_back(c);
+            }
+            id += 1;
+        }
+
+        let has_next_page = items.len() as u64 > limit;
+        if has_next_page {
+            items.pop_back();
+        }
+
+        let next_cursor = if has_next_page {
+            items.last().map(|c| c.id)
+        } else {
+            None
+        };
+
+        Page {
+            items,
+            has_next_page,
+            next_cursor,
+        }
+    }
+
     /// Get the total number of confessions created.
     pub fn get_total_count(env: Env) -> u64 {
         let next_id: u64 = env
@@ -220,6 +385,28 @@ impl ConfessionRegistry {
             .get(&DataKey::NextId)
             .unwrap_or(1u64);
         next_id - 1
+    }
+
+    /// Return the next valid nonce for a caller in sequenced mutation methods.
+    pub fn get_expected_nonce(env: Env, caller: Address) -> u64 {
+        expected_nonce(&env, &caller)
+    }
+
+    /// Replay-protected create_confession variant.
+    pub fn create_confession_seq(
+        env: Env,
+        author: Address,
+        content_hash: BytesN<32>,
+        timestamp: u64,
+        nonce: u64,
+    ) -> Result<u64, ReplayError> {
+        consume_nonce(&env, &author, nonce)?;
+        Ok(Self::create_confession(
+            env,
+            author,
+            content_hash,
+            timestamp,
+        ))
     }
 
     // ─── Update Status ───
@@ -238,13 +425,21 @@ impl ConfessionRegistry {
     ) {
         caller.require_auth();
 
+        // Check if paused — use shared emergency pause module
+        emergency_pause::assert_not_paused(&env).unwrap_or_else(|err| panic!("{}", err as u32));
+
         let mut confession: Confession = env
             .storage()
             .instance()
             .get(&DataKey::Confession(id))
             .expect("confession not found");
 
-        // Only author or admin may update
+        // Terminal-state guard — a deleted confession is immutable.
+        // Prevents resurrection (Deleted → Active) and double-delete side effects.
+        if confession.status == ConfessionStatus::Deleted {
+            panic!("confession is deleted and cannot be updated");
+        }
+
         let admin: Address = env
             .storage()
             .instance()
@@ -263,9 +458,30 @@ impl ConfessionRegistry {
             .instance()
             .set(&DataKey::Confession(id), &confession);
 
-        let event_topic = Symbol::new(&env, "confession_updated");
-        env.events()
-            .publish((event_topic, id), (old_status, confession.status, timestamp));
+        ConfessionUpdatedEvent {
+            id,
+            event_version: events::EVENT_VERSION_V1,
+            nonce: bump_confession_event_nonce(&env, id),
+            timestamp,
+            old_status,
+            new_status: confession.status,
+            correlation_id: None,
+        }
+        .publish(&env);
+    }
+
+    /// Replay-protected update_status variant.
+    pub fn update_status_seq(
+        env: Env,
+        caller: Address,
+        id: u64,
+        new_status: ConfessionStatus,
+        timestamp: u64,
+        nonce: u64,
+    ) -> Result<(), ReplayError> {
+        consume_nonce(&env, &caller, nonce)?;
+        Self::update_status(env, caller, id, new_status, timestamp);
+        Ok(())
     }
 
     // ─── Delete ───
@@ -278,11 +494,19 @@ impl ConfessionRegistry {
     pub fn delete_confession(env: Env, caller: Address, id: u64, timestamp: u64) {
         caller.require_auth();
 
+        // Check if paused — use shared emergency pause module
+        emergency_pause::assert_not_paused(&env).unwrap_or_else(|err| panic!("{}", err as u32));
+
         let mut confession: Confession = env
             .storage()
             .instance()
             .get(&DataKey::Confession(id))
             .expect("confession not found");
+
+        // Terminal-state guard — prevents double-delete and misleading updated_at stamps.
+        if confession.status == ConfessionStatus::Deleted {
+            panic!("confession is already deleted");
+        }
 
         let admin: Address = env
             .storage()
@@ -301,9 +525,28 @@ impl ConfessionRegistry {
             .instance()
             .set(&DataKey::Confession(id), &confession);
 
-        let event_topic = Symbol::new(&env, "confession_deleted");
-        env.events()
-            .publish((event_topic, id), (caller, timestamp));
+        ConfessionDeletedEvent {
+            id,
+            event_version: events::EVENT_VERSION_V1,
+            nonce: bump_confession_event_nonce(&env, id),
+            timestamp,
+            actor: caller,
+            correlation_id: None,
+        }
+        .publish(&env);
+    }
+
+    /// Replay-protected delete_confession variant.
+    pub fn delete_confession_seq(
+        env: Env,
+        caller: Address,
+        id: u64,
+        timestamp: u64,
+        nonce: u64,
+    ) -> Result<(), ReplayError> {
+        consume_nonce(&env, &caller, nonce)?;
+        Self::delete_confession(env, caller, id, timestamp);
+        Ok(())
     }
 }
 
@@ -317,7 +560,7 @@ mod test {
     fn setup() -> (Env, ConfessionRegistryClient<'static>, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, ConfessionRegistry);
+        let contract_id = env.register(ConfessionRegistry, ());
         let client = ConfessionRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -434,7 +677,8 @@ mod test {
         let hash = sample_hash(&env, 32);
 
         let id = client.create_confession(&author, &hash, &1_000);
-        client.update_status(&outsider, &id, &ConfessionStatus::Flagged, &2_000); // panic
+        client.update_status(&outsider, &id, &ConfessionStatus::Flagged, &2_000);
+        // panic
     }
 
     #[test]
@@ -448,6 +692,47 @@ mod test {
         let conf = client.get_confession(&id);
         assert_eq!(conf.status, ConfessionStatus::Deleted);
         assert_eq!(conf.updated_at, 3_000);
+    }
+
+    #[test]
+    fn duplicate_update_nonce_is_rejected_and_state_is_unchanged() {
+        let (env, client, _admin, author) = setup();
+        let id = client.create_confession(&author, &sample_hash(&env, 42), &1_000);
+
+        assert_eq!(client.get_expected_nonce(&author), 1);
+        client
+            .try_update_status_seq(&author, &id, &ConfessionStatus::Flagged, &2_000, &1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(client.get_expected_nonce(&author), 2);
+
+        let replay =
+            client.try_update_status_seq(&author, &id, &ConfessionStatus::Active, &3_000, &1);
+        assert!(replay.is_err());
+
+        let conf = client.get_confession(&id);
+        assert_eq!(conf.status, ConfessionStatus::Flagged);
+        assert_eq!(conf.updated_at, 2_000);
+        assert_eq!(client.get_expected_nonce(&author), 2);
+    }
+
+    #[test]
+    fn stale_delete_nonce_after_successful_update_is_rejected_without_state_change() {
+        let (env, client, _admin, author) = setup();
+        let id = client.create_confession(&author, &sample_hash(&env, 43), &1_000);
+
+        client
+            .try_update_status_seq(&author, &id, &ConfessionStatus::Flagged, &2_000, &1)
+            .unwrap()
+            .unwrap();
+
+        let stale_delete = client.try_delete_confession_seq(&author, &id, &3_000, &1);
+        assert!(stale_delete.is_err());
+
+        let conf = client.get_confession(&id);
+        assert_eq!(conf.status, ConfessionStatus::Flagged);
+        assert_eq!(conf.updated_at, 2_000);
+        assert_eq!(client.get_expected_nonce(&author), 2);
     }
 
     #[test]
@@ -471,19 +756,19 @@ mod test {
     #[test]
     fn test_governance_flow() {
         let (env, client, admin, _author) = setup();
-        
+
         let new_admin = Address::generate(&env);
         let action = governance::model::CriticalAction::GrantAdmin(new_admin.clone());
-        
+
         // Propose
         let id = client.gov_propose(&admin, &action);
-        
+
         // Approve (default quorum is 1)
         client.gov_approve(&admin, &id);
-        
+
         // Execute
         client.gov_execute(&admin, &id);
-        
+
         // Verify
         let is_adm = env.as_contract(&client.address, || {
             access_control::is_admin(&env, &new_admin)
@@ -495,55 +780,52 @@ mod test {
     fn test_governance_quorum() {
         let (env, client, admin, _author) = setup();
         let admin2 = Address::generate(&env);
-        
+
         // Grant second admin first
-        let grant_id = client.gov_propose(&admin, &governance::model::CriticalAction::GrantAdmin(admin2.clone()));
+        let grant_id = client.gov_propose(
+            &admin,
+            &governance::model::CriticalAction::GrantAdmin(admin2.clone()),
+        );
         client.gov_approve(&admin, &grant_id);
         client.gov_execute(&admin, &grant_id);
-        
+
         // Set quorum to 2
         client.set_quorum(&2);
-        
+
         let new_admin = Address::generate(&env);
         let action = governance::model::CriticalAction::GrantAdmin(new_admin.clone());
-        
+
         let id = client.gov_propose(&admin, &action);
-        
+
         // Approve 1/2
         client.gov_approve(&admin, &id);
-        
+
         // Execute (should fail)
-        let res = env.as_contract(&client.address, || {
-            std::panic::catch_unwind(|| {
-                // This is a bit tricky in Soroban tests, but usually we just expect panic
-            })
-        });
-        // For now, let's just test it panics correctly
+        let res = client.try_gov_execute(&admin, &id);
+        assert!(res.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "5002")] // QuorumNotReached
     fn test_execute_without_quorum() {
-        let (env, client, admin, _author) = setup();
+        let (_env, client, admin, _author) = setup();
         client.set_quorum(&2);
-        
+
         let id = client.gov_propose(&admin, &governance::model::CriticalAction::Pause);
         client.gov_approve(&admin, &id);
-        client.gov_execute(&admin, &id);
+        let result = client.try_gov_execute(&admin, &id);
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_governance_revoke() {
-        let (env, client, admin, _author) = setup();
+        let (_env, client, admin, _author) = setup();
         let id = client.gov_propose(&admin, &governance::model::CriticalAction::Pause);
-        
+
         client.gov_approve(&admin, &id);
         client.gov_revoke(&admin, &id);
-        
+
         // Try to execute (should fail since 0/1 approvals now)
-        let res = std::panic::catch_unwind(move || {
-             client.gov_execute(&admin, &id);
-        });
+        let res = client.try_gov_execute(&admin, &id);
         assert!(res.is_err());
     }
 
@@ -551,23 +833,21 @@ mod test {
     fn test_pause_via_governance() {
         let (env, client, admin, author) = setup();
         let hash = sample_hash(&env, 50);
-        
+
         // Propose Pause
         let id = client.gov_propose(&admin, &governance::model::CriticalAction::Pause);
         client.gov_approve(&admin, &id);
         client.gov_execute(&admin, &id);
-        
+
         // Try to create confession (should fail)
-        let res = std::panic::catch_unwind(move || {
-            client.create_confession(&author, &hash, &1_000);
-        });
+        let res = client.try_create_confession(&author, &hash, &1_000);
         assert!(res.is_err());
-        
+
         // Unpause
         let id2 = client.gov_propose(&admin, &governance::model::CriticalAction::Unpause);
         client.gov_approve(&admin, &id2);
         client.gov_execute(&admin, &id2);
-        
+
         // Try to create confession (should succeed)
         client.create_confession(&author, &hash, &2_000);
     }
@@ -575,8 +855,42 @@ mod test {
     #[test]
     #[should_panic(expected = "already initialized")]
     fn test_double_initialization() {
-        let (env, client, admin, _author) = setup();
+        let (env, client, _admin, _author) = setup();
         let another = Address::generate(&env);
         client.initialize(&another); // should panic
+    }
+
+    #[test]
+    fn author_confession_index_exact_limit_succeeds() {
+        let (env, client, _admin, author) = setup();
+
+        for seed in 0..MAX_AUTHOR_CONFESSIONS_PER_AUTHOR {
+            let hash = sample_hash(&env, seed as u8);
+            let id = client.create_confession(&author, &hash, &(1_000 + seed as u64));
+            assert_eq!(id, seed as u64 + 1);
+        }
+
+        assert_eq!(
+            client.get_total_count(),
+            MAX_AUTHOR_CONFESSIONS_PER_AUTHOR as u64
+        );
+        assert_eq!(
+            client.get_author_confessions(&author).len(),
+            MAX_AUTHOR_CONFESSIONS_PER_AUTHOR
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "registry payload too long")]
+    fn author_confession_index_limit_plus_one_rejected() {
+        let (env, client, _admin, author) = setup();
+
+        for seed in 0..MAX_AUTHOR_CONFESSIONS_PER_AUTHOR {
+            let hash = sample_hash(&env, seed as u8);
+            client.create_confession(&author, &hash, &(1_000 + seed as u64));
+        }
+
+        let hash = sample_hash(&env, MAX_AUTHOR_CONFESSIONS_PER_AUTHOR as u8);
+        let _ = client.create_confession(&author, &hash, &9_999);
     }
 }

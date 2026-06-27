@@ -2,21 +2,20 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { adminApi, Analytics } from '@/app/lib/api/admin';
+import { queryKeys } from '@/app/lib/api/queryKeys';
 import AnalyticsDashboard from '@/app/components/admin/AnalyticsDashboard';
+import ReportHealthCard from '@/app/components/admin/ReportHealthCard';
+import { AnalyticsLoadingSkeleton } from '@/app/components/analytics/LoadingState';
 
 export default function AdminDashboardPage() {
   const { data: analytics, isLoading } = useQuery<Analytics>({
-    queryKey: ['admin-analytics'],
+    queryKey: queryKeys.admin.analytics.all(),
     queryFn: () => adminApi.getAnalytics(),
-    refetchInterval: 60000, // Refetch every minute
+    refetchInterval: 60000,
   });
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500 dark:text-gray-400">Loading analytics...</div>
-      </div>
-    );
+    return <AnalyticsLoadingSkeleton />;
   }
 
   if (!analytics) {
@@ -37,6 +36,7 @@ export default function AdminDashboardPage() {
           Overview of platform health and user activity
         </p>
       </div>
+      <ReportHealthCard />
       <AnalyticsDashboard analytics={analytics} />
     </div>
   );

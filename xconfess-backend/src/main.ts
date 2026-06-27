@@ -1,21 +1,73 @@
-import { NestFactory } from '@nestjs/core';
+﻿import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import helmet from 'helmet';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
+import { WebSocketAdapter } from './websocket/websocket.adapter';
+import { AppLogger } from './logger/logger.service';
+import { configureRequestBodyParsing } from './common/request-body-limits';
 
+import cookieParser from 'cookie-parser';
+import {
+  cookieParserMiddleware,
+  csrfMiddleware,
+  csrfCookieSetter,
+} from './common/midleware/middleware';
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   const configService = app.get(ConfigService);
 
-  // Request-ID middleware — must be first so all downstream code sees it
+  // â”€â”€ 1. Request-ID must be first so all downstream code sees it â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const requestIdMiddleware = new RequestIdMiddleware();
   app.use(requestIdMiddleware.use.bind(requestIdMiddleware));
+
+  // Apply targeted limits before Nest validation pipes and controller code.
+  configureRequestBodyParsing(app);
+
   app.enableShutdownHooks();
+
+  // â”€â”€ 2. Security headers â€” single authoritative path for all HTTP responses â”€â”€
+  //    SecurityMiddleware is intentionally NOT registered as a Nest middleware
+  //    because it was never wired into the middleware consumer.  Applying Helmet
+  //    here in bootstrap ensures it runs on every request without exception.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: [],
+        },
+      },
+      // helmet v7 removed the xssFilter / noSniff shorthand aliases;
+      // xssProtection and noSniff are enabled by default â€” no need to re-declare.
+      frameguard: { action: 'deny' },
+    }),
+  );
+
+  // â”€â”€ 3. CORS â€” one allowed origin derived from config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //    Both HTTP and the WebSocket adapter read FRONTEND_URL so there is a
+  //    single documented source of truth for allowed origins.
+  const frontendUrl =
+    configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+
+  app.enableCors({
+    origin: frontendUrl,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  });
+
+  // â”€â”€ 4. WebSocket adapter â€” reads the same FRONTEND_URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  app.useWebSocketAdapter(new WebSocketAdapter(app, configService));
+
+  // â”€â”€ 5. Compression â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.use(
     compression({
       filter: (req, res) => {
@@ -28,6 +80,22 @@ async function bootstrap() {
     }),
   );
 
+
+  // ── 6. Cookie parser (required by csurf) ────────────────────────────────────
+  app.use(cookieParserMiddleware);
+
+  // ── 7. CSRF protection ────────────────────────────────────────────────────────
+  //    Webhooks are exempt — they use HMAC signature verification instead.
+  //    All other POST / PUT / PATCH / DELETE routes require a valid CSRF token.
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/webhooks/')) {
+      return next();
+    }
+    csrfMiddleware(req as any, res as any, (err) => {
+      if (err) return next(err);
+      csrfCookieSetter(req as any, res as any, next);
+    });
+  });
   app.setGlobalPrefix('api');
 
   app.useGlobalPipes(
@@ -38,16 +106,16 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(
+    new AllExceptionsFilter(),
     new HttpExceptionFilter(),
     new ThrottlerExceptionFilter(),
   );
 
-  // Swagger / OpenAPI setup — available in non-production
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('xConfess API')
       .setDescription(
-        'Anonymous confession platform API — confessions, reactions, messages, reports, admin, and Stellar integration.',
+        'Anonymous confession platform API â€” confessions, reactions, messages, reports, admin, and Stellar integration.',
       )
       .setVersion('1.0')
       .addBearerAuth()
@@ -67,31 +135,26 @@ async function bootstrap() {
     SwaggerModule.setup('api/api-docs', app, document);
   }
 
-  // Migration verification check
-  if (process.env.NODE_ENV !== 'test') {
-    const { DataSource } = await import('typeorm');
-    try {
-      const dataSource = app.get(DataSource);
-      const result = await dataSource.query(`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public'
-        AND table_name = 'anonymous_confessions' 
-        AND column_name IN ('view_count', 'search_vector');
-      `);
-
-      const columns = result.map((r: any) => r.column_name);
-      if (!columns.includes('view_count') || !columns.includes('search_vector')) {
-        console.warn('⚠️  Database schema may be out of sync. Missing view_count or search_vector columns.');
-      } else {
-        console.log('✅ Database schema verified.');
-      }
-    } catch (error) {
-      console.error('❌ Failed to verify database schema during startup:', error.message);
-    }
-  }
-
   const port = configService.get<number>('app.port', 3000);
   await app.listen(port);
+
+  // â”€â”€ Startup Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const logger = app.get(AppLogger);
+  const env = configService.get<string>('NODE_ENV', 'development');
+  const dbHost = configService.get<string>('DB_HOST', 'localhost');
+  const dbPort = configService.get<number>('DB_PORT', 55432);
+  const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
+  const redisPort = configService.get<number>('REDIS_PORT', 6379);
+  const backgroundJobMode = configService.get<string>('ENABLE_BACKGROUND_JOBS', 'false');
+  
+  logger.log(
+    `ðŸš€ Application started successfully`,
+    'Bootstrap'
+  );
+  logger.log(
+    `Environment: ${env} | Port: ${port} | DB: ${dbHost}:${dbPort} | Redis: ${redisHost}:${redisPort} | Background Jobs: ${backgroundJobMode}`,
+    'Bootstrap'
+  );
 }
 bootstrap();
+

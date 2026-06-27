@@ -22,7 +22,9 @@ export class ModerationRepositoryService {
     apiProvider?: string,
     manager?: EntityManager,
   ): Promise<ModerationLog> {
-    const repo = manager ? manager.getRepository(ModerationLog) : this.moderationLogRepo;
+    const repo = manager
+      ? manager.getRepository(ModerationLog)
+      : this.moderationLogRepo;
     const log = repo.create({
       confessionId,
       userId,
@@ -37,6 +39,69 @@ export class ModerationRepositoryService {
     });
 
     return await repo.save(log);
+  }
+
+  async syncWebhookResult(
+    params: {
+      confessionId: string;
+      content: string;
+      userId?: string;
+      result: ModerationResult;
+      deliveryHash: string;
+      deliveryTimestamp: string;
+      signatureValid?: boolean;
+      payloadMalformed?: boolean;
+      deliveryStale?: boolean;
+    },
+    manager?: EntityManager,
+  ): Promise<{ log: ModerationLog; isIdempotent: boolean }> {
+    const repo = manager
+      ? manager.getRepository(ModerationLog)
+      : this.moderationLogRepo;
+
+    const existing = await repo.findOne({
+      where: { confessionId: params.confessionId },
+      order: { createdAt: 'DESC' },
+    });
+
+    const existingWebhookHash = existing?.metadata?.webhook?.deliveryHash;
+    if (existing && existingWebhookHash === params.deliveryHash) {
+      return { log: existing, isIdempotent: true };
+    }
+
+    const log =
+      existing ??
+      repo.create({
+        confessionId: params.confessionId,
+        userId: params.userId,
+        content: params.content.substring(0, 5000),
+      });
+
+    log.userId = params.userId ?? '';
+    log.content = params.content.substring(0, 5000);
+    log.moderationScore = params.result.score;
+    log.moderationFlags = params.result.flags;
+    log.moderationStatus = params.result.status;
+    log.details = params.result.details;
+    log.requiresReview = params.result.requiresReview;
+    log.autoActioned = params.result.status !== ModerationStatus.PENDING;
+    log.apiProvider = 'webhook';
+    log.metadata = {
+      ...(existing?.metadata ?? {}),
+      webhook: {
+        deliveryHash: params.deliveryHash,
+        timestamp: params.deliveryTimestamp,
+        processedAt: new Date().toISOString(),
+        signatureValid: params.signatureValid ?? true,
+        payloadMalformed: params.payloadMalformed ?? false,
+        stale: params.deliveryStale ?? false,
+      },
+    };
+
+    return {
+      log: await repo.save(log),
+      isIdempotent: false,
+    };
   }
 
   async updateReview(

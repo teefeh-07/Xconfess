@@ -1,15 +1,16 @@
 "use client";
 
 import {
-  NotificationFilter,
-  PaginatedNotifications,
+    NotificationFilter,
 } from "@/app/types/notifications";
-import type {Notification} from "@/app/types/notifications"
+import type { Notification } from "@/app/types/notifications";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { AUTH_TOKEN_KEY } from "@/app/lib/api/constants";
+import { notificationApi } from "@/app/lib/api/notification";
+import { useApiError } from "@/app/lib/hooks/useApiError";
+import { getWsUrl } from "@/app/lib/config";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
+const WS_URL = getWsUrl();
 
 interface UseNotificationsReturn {
   notifications: Notification[];
@@ -30,6 +31,12 @@ export function useNotifications(userId: string): UseNotificationsReturn {
   const [loading, setLoading] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // True after the first successful connect; subsequent connects are reconnects
+  const hasConnectedRef = useRef(false);
+  const { handleError } = useApiError({ context: 'Notifications' });
+  const debugNotifications =
+    process.env.NODE_ENV === 'development' &&
+    process.env.NEXT_PUBLIC_DEBUG_NOTIFICATIONS === 'true';
 
   // Initialize notification sound
   useEffect(() => {
@@ -42,34 +49,18 @@ export function useNotifications(userId: string): UseNotificationsReturn {
   const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.play().catch((err) => {
-        console.log("Could not play notification sound:", err);
+        if (debugNotifications) {
+          console.warn('Notification sound playback failed', err);
+        }
       });
     }
-  }, []);
+  }, [debugNotifications]);
 
   const fetchNotifications = useCallback(
     async (filter?: NotificationFilter) => {
       setLoading(true);
       try {
-        const params = new URLSearchParams();
-        if (filter?.type) params.append("type", filter.type);
-        if (filter?.isRead !== undefined)
-          params.append("isRead", String(filter.isRead));
-        params.append("page", String(filter?.page || 1));
-        params.append("limit", String(filter?.limit || 20));
-
-        const response = await fetch(
-          `/api/notifications?${params.toString()}`,
-          {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-            },
-          }
-        );
-
-        if (!response.ok) throw new Error("Failed to fetch notifications");
-
-        const data: PaginatedNotifications = await response.json();
+        const data = await notificationApi.getNotifications(filter);
 
         if (filter?.page && filter.page > 1) {
           setNotifications((prev) => [...prev, ...data.notifications]);
@@ -79,27 +70,24 @@ export function useNotifications(userId: string): UseNotificationsReturn {
 
         setUnreadCount(data.unreadCount);
       } catch (error) {
-        console.error("Error fetching notifications:", error);
+        handleError(error, 'Unable to load notifications. Please try again.');
       } finally {
         setLoading(false);
       }
     },
-    []
+    [handleError]
   );
+
+  // Stable ref so socket/visibility effects can call the latest fetchNotifications
+  // without being listed as deps (which would tear down and recreate the socket).
+  const fetchNotificationsRef = useRef(fetchNotifications);
+  useEffect(() => {
+    fetchNotificationsRef.current = fetchNotifications;
+  });
 
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
-      const response = await fetch(
-        `/api/notifications/${notificationId}/read`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to mark notification as read");
+      await notificationApi.markAsRead(notificationId);
 
       setNotifications((prev) =>
         prev.map((notif) =>
@@ -108,77 +96,74 @@ export function useNotifications(userId: string): UseNotificationsReturn {
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (error) {
-      console.error("Error marking notification as read:", error);
+      handleError(error, 'Unable to mark notification as read. Please try again.');
     }
-  }, []);
+  }, [handleError]);
 
   const markAllAsRead = useCallback(async () => {
     try {
-      const response = await fetch("/api/notifications/read-all", {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-        },
-      });
-
-      if (!response.ok) throw new Error("Failed to mark all as read");
+      await notificationApi.markAllAsRead();
 
       setNotifications((prev) =>
         prev.map((notif) => ({ ...notif, isRead: true }))
       );
       setUnreadCount(0);
     } catch (error) {
-      console.error("Error marking all as read:", error);
+      handleError(error, 'Unable to mark all notifications as read. Please try again.');
     }
-  }, []);
+  }, [handleError]);
 
   const deleteNotification = useCallback(async (notificationId: string) => {
     try {
-      const response = await fetch(`/api/notifications/${notificationId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-        },
-      });
-
-      if (!response.ok) throw new Error("Failed to delete notification");
+      await notificationApi.deleteNotification(notificationId);
 
       setNotifications((prev) =>
         prev.filter((notif) => notif.id !== notificationId)
       );
     } catch (error) {
-      console.error("Error deleting notification:", error);
+      handleError(error, 'Unable to delete notification. Please try again.');
     }
-  }, []);
+  }, [handleError]);
 
   // WebSocket connection
   useEffect(() => {
     if (!userId) return;
 
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    // get auth token from our client or cookies - we'll just omit it if the socket relies on cookies
+    // Or we keep AUTH_TOKEN_KEY usage ONLY for websocket
+    const token = localStorage.getItem("auth_token");
 
     const socket = io(WS_URL, {
       auth: { token },
       transports: ["websocket", "polling"],
+      withCredentials: true,
     });
 
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("WebSocket connected");
+      if (debugNotifications) {
+        console.debug('Notifications websocket connected');
+      }
       setIsConnected(true);
-      // Join user's notification room
       socket.emit("join-notifications", userId);
+
+      // On reconnect, pull fresh state from the API to catch any notifications
+      // that arrived while the socket was down.
+      if (hasConnectedRef.current) {
+        fetchNotificationsRef.current();
+      }
+      hasConnectedRef.current = true;
     });
 
     socket.on("disconnect", () => {
-      console.log("WebSocket disconnected");
+      if (debugNotifications) {
+        console.debug('Notifications websocket disconnected');
+      }
       setIsConnected(false);
     });
 
     socket.on("notification", (notification: Notification) => {
-      console.log("New notification received:", notification);
-
       // Add to notifications list
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
@@ -197,7 +182,9 @@ export function useNotifications(userId: string): UseNotificationsReturn {
     });
 
     socket.on("connect_error", (error) => {
-      console.error("WebSocket connection error:", error);
+      if (debugNotifications) {
+        console.debug('Notifications websocket connection error', error);
+      }
       setIsConnected(false);
     });
 
@@ -205,7 +192,22 @@ export function useNotifications(userId: string): UseNotificationsReturn {
     return () => {
       socket.disconnect();
     };
-  }, [userId, playNotificationSound]);
+  }, [userId, playNotificationSound, debugNotifications]);
+
+  // Reconcile when the tab becomes visible again — covers the multi-tab read-all
+  // case and any drift that built up while the tab was in the background.
+  useEffect(() => {
+    if (!userId) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchNotificationsRef.current();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [userId]);
 
   // Request browser notification permission
   useEffect(() => {

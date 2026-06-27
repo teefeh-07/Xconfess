@@ -1,34 +1,25 @@
-# Reliable Notification Dispatch via Transactional Outbox
+# Pull Request: Chunked Export Packaging for Large Account Histories
 
 ## Summary
+This PR implements a chunked packaging system for user data exports. It addresses the issue of memory spikes and worker instability when processing large account histories by switching from an in-memory buffering strategy to a stream-based chunking strategy.
 
-This PR implements the **Transactional Outbox pattern** to ensure reliable notification dispatch across the system. It eliminates the risk of "lost notifications" that occurred when database writes succeeded but the subsequent immediate enqueuing to the message queue failed.
+## Changes
+- **Database Model**:
+  - Added `ExportChunk` entity to store individual 10MB file segments.
+  - Updated `ExportRequest` with metadata for tracking multi-part bundles (isChunked, chunkCount, totalSize, combinedChecksum).
+- **Export Processing**:
+  - Refactored `ExportProcessor` to use `archiver` piped into a custom `Writable` stream.
+  - ZIP data is now saved to the database in 10MB increments, keeping worker memory usage constant and low.
+- **Service & Controller**:
+  - Updated `DataExportService` to support retrieving specific chunks and generating signed URLs for them.
+  - Enhanced `DataExportController` to provide metadata for chunked exports and handle partial-segment downloads.
+- **Verification**:
+  - Added unit tests for the signed URL generation and chunk retrieval logic in `DataExportService`.
+  - Added unit tests for the streaming and chunk saving logic in `ExportProcessor`.
 
-## Key Changes
+## Impact
+- Large account exports (e.g., >100MB) no longer cause OOM errors in backend workers.
+- Users can now download large histories in manageable segments with integrity validation across all parts.
 
-### 1. Infrastructure
-- **`OutboxEvent` Entity**: New entity to persist notification intents transactionally with domain data.
-- **`OutboxDispatcherService`**: A scheduled worker that polls `PENDING` outbox events and safely relays them to the `NotificationQueue`.
-- **`NotificationModule`**: Configured to provide the dispatcher and register the new entity.
-
-### 2. Domain & Entity Refactoring
-- **`User` Entity**: Added `getEmail()` method to handle AES-256-GCM decryption of user emails for notification dispatch.
-- **`AnonymousUser` Entity**: Fixed missing `userLinks` relation to allow correct resolution of the associated account user.
-- **Transactional Writes**: Refactored the following services to use `dataSource.transaction` and persist outbox records:
-    - `CommentService`
-    - `MessagesService`
-    - `ReactionService`
-    - `ReportsService`
-
-### 3. Notification Logic
-- **`NotificationQueue`**: Generalized processing logic to handle multiple notification types (comments, messages, replies, reactions, reports).
-- **`EmailService`**: Added `sendGenericNotification` for unified template resolution and email delivery.
-
-## Verification
-
-- [x] **Transactional Integrity**: Verified that `OutboxEvent` records are saved within the same database transaction as the domain entity.
-- [x] **Decryption & Relations**: Verified that recipient emails are correctly resolved via the new `userLinks` relation and decrypted before dispatch.
-- [x] **Idempotency**: Implemented unique `idempotencyKey` on outbox events to prevent duplicate notification processing.
-- [x] **Error Handling**: Implemented retry logic and failure logging in the dispatcher.
-
-#XXX
+## Issue
+#432

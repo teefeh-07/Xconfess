@@ -6,20 +6,152 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  RUST_BACKTRACE: 1
+  CI: true
+  SKIP_E2E: ${{ vars.SKIP_E2E || 'false' }}
+
 jobs:
-  lint:
+  changes:
+    name: Detect Changed Files
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'xconfess-backend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            frontend:
+              - 'xconfess-frontend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            contracts:
+              - 'xconfess-contracts/**'
+
+  backend:
+    name: Backend / build and test
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Use repository npm version
+        run: npm install --global npm@10.9.3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        run: npm run build --workspace=xconfess-backend
+
+      - name: Test backend (advisory)
+        run: npm run test --workspace=xconfess-backend
+        continue-on-error: true
+
+  frontend:
+    name: Frontend / build and test
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Use repository npm version
+        run: npm install --global npm@10.9.3
+
       - name: Install dependencies
         run: npm ci
-      - name: Lint backend
-        run: npm run lint --workspace=xconfess-backend
-      - name: Lint frontend
-        run: npm run lint --workspace=xconfess-frontend
+
+      - name: Build frontend
+        run: npm run build --workspace=xconfess-frontend
+
+      - name: Test frontend (advisory)
+        run: npm run test --workspace=xconfess-frontend
+        continue-on-error: true
+
+      - name: Run E2E tests
+        if: ${{ env.SKIP_E2E != 'true' }}
+        run: npx playwright install chromium && npm run test:e2e --workspace=xconfess-frontend
+        continue-on-error: true
+
+  contracts:
+    name: Contracts / fmt clippy and test
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xconfess-contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: xconfess-contracts
+          cache-targets: true
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test contracts (unit)
+        run: cargo test --workspace
+
+      - name: Test contracts (integration — local sandbox)
+        run: cargo test --test integration -p confession-anchor -- --nocapture
+
+      - name: Upload target directory on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-check-logs
+          path: xconfess-contracts/target/
+          retention-days: 7

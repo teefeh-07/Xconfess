@@ -1,10 +1,10 @@
 use soroban_sdk::{Env, String};
 
 use crate::emergency_pause::{
-    storage::DataKey,
+    admin::require_pause_authority,
     errors::PauseError,
     events::{emit_paused, emit_unpaused},
-    admin::require_admin,
+    storage::DataKey,
 };
 
 pub fn is_paused(env: &Env) -> bool {
@@ -21,8 +21,8 @@ pub fn assert_not_paused(env: &Env) -> Result<(), PauseError> {
     Ok(())
 }
 
-pub fn pause(env: Env, reason: String) -> Result<(), PauseError> {
-    let actor = require_admin(&env)?;
+pub fn pause(env: Env, caller: soroban_sdk::Address, reason: String) -> Result<(), PauseError> {
+    let actor = require_pause_authority(&env, &caller)?;
 
     if is_paused(&env) {
         return Err(PauseError::AlreadyPaused);
@@ -35,8 +35,8 @@ pub fn pause(env: Env, reason: String) -> Result<(), PauseError> {
     Ok(())
 }
 
-pub fn unpause(env: Env, reason: String) -> Result<(), PauseError> {
-    let actor = require_admin(&env)?;
+pub fn unpause(env: Env, caller: soroban_sdk::Address, reason: String) -> Result<(), PauseError> {
+    let actor = require_pause_authority(&env, &caller)?;
 
     if !is_paused(&env) {
         return Err(PauseError::NotPaused);
@@ -47,4 +47,10 @@ pub fn unpause(env: Env, reason: String) -> Result<(), PauseError> {
     emit_unpaused(&env, &actor, reason);
 
     Ok(())
+}
+
+/// Internal: Set paused state without admin authorization check.
+/// Used by governance module after quorum approval.
+pub fn set_paused_internal(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
 }

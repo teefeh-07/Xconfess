@@ -1,10 +1,11 @@
 // components/notifications/NotificationPreferences.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Save, Bell, Mail } from "lucide-react";
 import { NotificationPreferences as Preferences } from "@/app/types/notifications";
-import { AUTH_TOKEN_KEY } from "@/app/lib/api/constants";
+import { notificationApi } from "@/app/lib/api/notification";
+import { useGlobalToast } from "@/app/components/common/Toast";
 
 interface NotificationPreferencesProps {
   onClose: () => void;
@@ -30,52 +31,36 @@ export function NotificationPreferences({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const toast = useGlobalToast();
 
-  useEffect(() => {
-    fetchPreferences();
-  }, []);
-
-  const fetchPreferences = async () => {
+  const fetchPreferences = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/notifications/preferences`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setPreferences(data);
-      }
-    } catch (error) {
-      console.error("Error fetching preferences:", error);
+      const data = await notificationApi.getPreferences();
+      setPreferences(data);
+    } catch {
+      toast.error("Failed to load notification preferences.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchPreferences();
+  }, [fetchPreferences]);
 
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
 
     try {
-      const response = await fetch("/api/notifications/preferences", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`,
-        },
-        body: JSON.stringify(preferences),
-      });
-
-      if (!response.ok) throw new Error("Failed to save preferences");
+      await notificationApi.updatePreferences(preferences);
 
       setSaved(true);
+      toast.success("Notification preferences saved.");
       setTimeout(() => setSaved(false), 3000);
-    } catch (error) {
-      console.error("Error saving preferences:", error);
-      alert("Failed to save preferences. Please try again.");
+    } catch {
+      toast.error("Failed to save preferences. Please try again.");
     } finally {
       setSaving(false);
     }

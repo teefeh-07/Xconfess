@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { X, LogOut, User, MessageSquare, Home, Search } from "lucide-react";
+import { X, LogOut, User, MessageSquare, Home, Search, BarChart3, Anchor } from "lucide-react";
 import { useAuth } from "../../lib/hooks/useAuth";
-import { useEffect } from "react";
+import { useFocusTrap } from "@/app/lib/hooks/useFocusTrap";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user, logout } = useAuth();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -23,6 +26,13 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       document.body.style.overflow = "unset";
     };
   }, [isOpen]);
+
+  useFocusTrap({
+    active: isOpen,
+    containerRef: panelRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: onClose,
+  });
 
   return (
     <>
@@ -41,11 +51,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Mobile Navigation"
+        id="mobile-navigation"
+        ref={panelRef}
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-slate-800">
             <span className="text-lg font-bold text-primary">xConfess</span>
             <button
+              ref={closeButtonRef}
               onClick={onClose}
               className="p-2 -mr-2 text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-full hover:bg-zinc-100 dark:hover:bg-slate-800 transition-colors"
               aria-label="Close menu"
@@ -55,11 +68,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
 
           <nav className="flex-1 overflow-y-auto py-4">
-            <ul className="space-y-1 px-2">
+            <ul className="space-y-2 px-2">
               <li>
                 <Link
                   href="/"
-                  className="flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors"
+                  className="flex items-center gap-3 px-4 py-4 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors min-h-[44px]"
                   onClick={onClose}
                 >
                   <Home size={20} />
@@ -69,7 +82,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               <li>
                 <Link
                   href="/search"
-                  className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-purple-50 hover:text-purple-600 rounded-lg transition-colors"
+                  className="flex items-center gap-3 px-4 py-4 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors min-h-[44px]"
                   onClick={onClose}
                 >
                   <Search size={20} />
@@ -78,8 +91,18 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               </li>
               <li>
                 <Link
-                  href="/profile"
+                  href="/compare"
                   className="flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors"
+                  onClick={onClose}
+                >
+                  <BarChart3 size={20} />
+                  <span>Compare</span>
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-3 px-4 py-4 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors min-h-[44px]"
                   onClick={onClose}
                 >
                   <User size={20} />
@@ -88,8 +111,18 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               </li>
               <li>
                 <Link
+                  href="/anchors"
+                  className="flex items-center gap-3 px-4 py-4 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors min-h-[44px]"
+                  onClick={onClose}
+                >
+                  <Anchor size={20} />
+                  <span>Anchors</span>
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/messages"
-                  className="flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors"
+                  className="flex items-center gap-3 px-4 py-4 text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors min-h-[44px]"
                   onClick={onClose}
                 >
                   <MessageSquare size={20} />

@@ -1,14 +1,23 @@
-import axios, { AxiosError, AxiosResponse } from "axios";
-import { logError, getErrorMessage } from "@/app/lib/utils/errorHandler";
-import { AUTH_TOKEN_KEY, REFRESH_TOKEN_KEY } from "./constants";
+﻿import axios, { AxiosError, AxiosResponse } from "axios";
+import { logError } from "@/app/lib/utils/errorHandler";
 import { useAuthStore } from "@/app/lib/store/authStore";
+import { getApiBaseUrl } from "@/app/lib/config";
 
 const apiClient = axios.create({
-	baseURL: process.env.NEXT_PUBLIC_API_URL,
+	baseURL: getApiBaseUrl(),
 	headers: { "Content-Type": "application/json" },
 	timeout: 30000,
 });
 
+/**
+ * Read the XSRF-TOKEN cookie set by the backend after each request.
+ * Returns an empty string if the cookie is absent (e.g. before first response).
+ */
+function getCsrfToken(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 // Request interceptor for adding auth token
 apiClient.interceptors.request.use(
 	(config) => {
@@ -18,6 +27,11 @@ apiClient.interceptors.request.use(
 		// Generate correlation ID for tracing
 		const correlationId = crypto.randomUUID();
 		config.headers["X-Correlation-ID"] = correlationId;
+        // Send CSRF token on state-changing requests
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+            config.headers['X-XSRF-TOKEN'] = csrfToken;
+        }
 		config.correlationId = correlationId;
 
 		return config;
@@ -37,6 +51,13 @@ declare module "axios" {
 }
 
 const MAX_RETRIES = 3;
+const DEV_BYPASS_AUTH_ENABLED =
+	process.env.NODE_ENV === "development" &&
+	process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true";
+
+function shouldSuppressExpectedDevOfflineError(error: AxiosError): boolean {
+	return DEV_BYPASS_AUTH_ENABLED && !error.response;
+}
 
 // Response interceptor for error handling and retries
 apiClient.interceptors.response.use(
@@ -49,7 +70,7 @@ apiClient.interceptors.response.use(
 
 		config.__retryCount = config.__retryCount ?? 0;
 
-		// Handle 401 Unauthorized — clear auth state and let AuthGuard handle redirect
+		// Handle 401 Unauthorized â€” clear auth state and let AuthGuard handle redirect
 		if (error.response?.status === 401) {
 			// Signal the store: clears localStorage tokens + resets isAuthenticated.
 			// AuthGuard detects isAuthenticated: false and does router.push('/login').
@@ -59,7 +80,7 @@ apiClient.interceptors.response.use(
 			return Promise.reject(error);
 		}
 
-		// Handle 403 Forbidden — no retry
+		// Handle 403 Forbidden â€” no retry
 		if (error.response?.status === 403) {
 			logError(error, "API Client - Forbidden", { url: config.url });
 			return Promise.reject(error);
@@ -87,22 +108,69 @@ apiClient.interceptors.response.use(
 					? "API Client - Server Error"
 					: "API Client - Request Failed";
 
-		logError(
-			error,
-			config.__retryCount > 0
-				? `${context} (after ${config.__retryCount} retries)`
-				: context,
-			{
+		if (shouldSuppressExpectedDevOfflineError(error)) {
+			console.debug("Skipping expected local API error while backend is offline.", {
 				url: config.url,
-				status: error.response?.status,
 				retries: config.__retryCount,
 				correlationId: config.correlationId,
-			},
-		);
+			});
+		} else {
+			logError(
+				error,
+				config.__retryCount > 0
+					? `${context} (after ${config.__retryCount} retries)`
+					: context,
+				{
+					url: config.url,
+					status: error.response?.status,
+					retries: config.__retryCount,
+					correlationId: config.correlationId,
+				},
+			);
+		}
 
 		return Promise.reject(error);
 	},
 );
 
 export default apiClient;
-export { AxiosError };
+export { apiClient, AxiosError };
+
+export type DataExportStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED";
+
+export interface DataExportHistoryItem {
+	id: string;
+	status: DataExportStatus;
+	createdAt: string;
+	expiresAt: number | null;
+	canRedownload: boolean;
+	canRequestNewLink: boolean;
+	downloadUrl: string | null;
+}
+
+export interface DataExportHistoryResponse {
+	latest: DataExportHistoryItem | null;
+	history: DataExportHistoryItem[];
+}
+
+export const dataExportApi = {
+	async getHistory() {
+		const response = await apiClient.get<DataExportHistoryResponse>("/data-export/history");
+		return response.data;
+	},
+
+	async requestExport() {
+		const response = await apiClient.post<{ requestId: string; status: string }>(
+			"/data-export/request",
+		);
+		return response.data;
+	},
+
+	async redownload(requestId: string) {
+		const response = await apiClient.post<{ downloadUrl: string }>(
+			`/data-export/${requestId}/redownload`,
+		);
+		return response.data;
+	},
+};
+

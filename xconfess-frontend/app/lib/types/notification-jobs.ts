@@ -31,7 +31,26 @@ export interface FailedJobsFilter {
 }
 
 export interface ReplayJobResponse {
-  success: boolean;
-  message: string;
-  jobId: string;
+  id: string;
+  outcome: 'replayed' | 'deduplicated' | 'failed';
+  replayJobId: string;
+  newJobId: string | null;
+}
+
+export interface BulkReplayResponse {
+  operationId: string;
+  attempted: number;
+  replayed: number;
+  deduplicated: number;
+  failed: number;
+  noOp: boolean;
+  outcomes: Array<{
+    jobId: string;
+    originalJobId: string | null;
+    replayJobId: string;
+    outcome: 'replayed' | 'deduplicated' | 'failed';
+    newJobId?: string;
+    existingJobId?: string;
+    error?: string;
+  }>;
 }

@@ -17,6 +17,14 @@ await contractService.anchorConfession('hash', Date.now(), 'SC...');
 ## Overview
 This module provides secure, robust, and testable integration with the Stellar blockchain and Soroban smart contracts for the xConfess backend.
 
+## Operations Runbook
+- For production support workflows, use:
+  - [`docs/stellar-anchor-and-tipping-runbook.md`](../../../docs/stellar-anchor-and-tipping-runbook.md)
+- This runbook covers:
+  - Anchor/tip verification and reconciliation flow.
+  - Pending, failed, and replay-safe handling.
+  - Required incident evidence before manual intervention/refund decisions.
+
 ### Features
 - Network switching (testnet/mainnet)
 - Transaction building, signing, and verification
@@ -29,6 +37,13 @@ This module provides secure, robust, and testable integration with the Stellar b
 
 ### Get Stellar Network Config
 `GET /stellar/config`
+
+Returns the configured network, Horizon/Soroban RPC URLs, and public Soroban contract IDs.
+Unset contract IDs are `null`. This endpoint never returns `STELLAR_SERVER_SECRET` or deployer keys.
+
+When `STELLAR_FEATURES_ENABLED=true`, bootstrap validation requires
+`CONFESSION_ANCHOR_CONTRACT_ID`, `REPUTATION_BADGES_CONTRACT_ID`, and `TIPPING_SYSTEM_CONTRACT_ID`.
+With `STELLAR_FEATURES_ENABLED=false` (default for local dev), the API can boot without contract IDs.
 
 ### Get Account Balance
 `GET /stellar/balance/:address`

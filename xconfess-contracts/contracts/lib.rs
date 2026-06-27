@@ -35,3 +35,7 @@ pub fn latest_role_event_nonce(env: &Env, user: Address, role: Symbol) -> u64 {
 pub fn latest_governance_event_nonce(env: &Env, stream: Symbol) -> u64 {
     events::latest_governance_nonce(env, stream)
 }
+
+pub fn latest_badge_event_nonce(env: &Env, badge_id: u64) -> u64 {
+    events::latest_badge_nonce(env, badge_id)
+}

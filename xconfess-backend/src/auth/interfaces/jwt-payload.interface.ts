@@ -1,3 +1,4 @@
+import { Request } from 'express';
 import { UserRole } from '../../user/entities/user.entity';
 
 /**
@@ -8,6 +9,11 @@ export interface JwtPayload {
   username: string;
   email: string;
   role: UserRole;
+  /**
+   * Optional scopes derived from the user role at issuance time.
+   * Fine-grained guards can check these instead of coarse role checks.
+   */
+  scopes?: string[];
   iat?: number; // Issued at (optional, added by JWT)
   exp?: number; // Expiration (optional, added by JWT)
 }
@@ -21,6 +27,7 @@ export interface RequestUser {
   username: string;
   email: string;
   role: UserRole;
+  scopes?: string[];
 }
 
 /**

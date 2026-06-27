@@ -18,7 +18,10 @@ export class AnonymousUserService {
     return this.anonymousUserRepository.save(anon);
   }
 
-  async getOrCreateForUserSession(userId: number, sessionWindowHours: number = 24): Promise<AnonymousUser> {
+  async getOrCreateForUserSession(
+    userId: number,
+    sessionWindowHours: number = 24,
+  ): Promise<AnonymousUser> {
     // Calculate the session window cutoff time
     const sessionCutoff = new Date();
     sessionCutoff.setHours(sessionCutoff.getHours() - sessionWindowHours);
@@ -64,6 +67,14 @@ export class AnonymousUserService {
       }),
     );
     return newAnon;
+  }
+
+  async getAnonIdsForUser(userId: number): Promise<string[]> {
+    const links = await this.userAnonRepo.find({
+      where: { userId },
+      select: ['anonymousUserId'],
+    });
+    return links.map((link) => link.anonymousUserId);
   }
 
   async cleanupExpiredSessions(sessionWindowHours: number = 24): Promise<void> {

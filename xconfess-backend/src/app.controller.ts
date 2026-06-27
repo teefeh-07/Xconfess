@@ -2,26 +2,16 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { AppService } from './app.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import {
-  HealthCheck,
-  HealthCheckService,
-  TypeOrmHealthIndicator,
-} from '@nestjs/terminus';
-import { RedisHealthIndicator } from './health/redis.health';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { AdminGuard } from './auth/admin.guard';
-import { NotificationQueue } from './notification/notification.queue';
-// import { RedisHealthIndicator } from './health/redis.health';
+import { JobManagementService } from './notifications/services/job-management.service';
 
 @ApiTags('App')
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
-    private health: HealthCheckService,
-    private db: TypeOrmHealthIndicator,
-    private redis: RedisHealthIndicator,
-    private readonly notificationQueue: NotificationQueue,
+    private readonly jobManagementService: JobManagementService,
   ) {}
 
   @Get()
@@ -36,30 +26,17 @@ export class AppController {
     return this.appService.getHello();
   }
 
-  // ✅ NEW HEALTH ENDPOINT
-  @Get('health')
-  @HealthCheck()
-  @ApiOperation({ summary: 'Application health check endpoint' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns application health status',
-  })
-  check() {
-    return this.health.check([
-      async () => ({ app: { status: 'up' } }),
-      async () => this.db.pingCheck('database'),
-      // async () => this.redis.isHealthy('redis'),
-    ]);
-  }
-
   @Get('diagnostics/notifications')
   @UseGuards(JwtAuthGuard, AdminGuard)
-  @ApiOperation({ summary: 'Notification delivery metrics and queue health diagnostics' })
+  @ApiOperation({
+    summary: 'Notification delivery metrics and queue health diagnostics',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Returns queue depth, DLQ depth, counters, and timer metrics for notification processing',
+    description:
+      'Returns queue depth, DLQ depth, counters, and timer metrics for notification processing',
   })
   async getNotificationDiagnostics() {
-    return this.notificationQueue.getDiagnostics();
+    return this.jobManagementService.getDiagnostics();
   }
 }

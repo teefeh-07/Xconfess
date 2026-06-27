@@ -1,4 +1,4 @@
-# xconfess-contract
+# xconfess-contracts
 
 Soroban smart contract for the XConfess platform. Provides tamper-proof
 on-chain anchoring of anonymous confession hashes on the Stellar network.
@@ -7,7 +7,7 @@ on-chain anchoring of anonymous confession hashes on the Stellar network.
 
 ## Table of contents
 
-- [What the contract does](#what-the-contract-does)
+- [What's contract does](#what-the-contract-does)
 - [Prerequisites](#prerequisites)
 - [Toolchain setup](#toolchain-setup)
 - [Project structure](#project-structure)
@@ -15,7 +15,9 @@ on-chain anchoring of anonymous confession hashes on the Stellar network.
 - [Testing](#testing)
 - [Linting and formatting](#linting-and-formatting)
 - [Deployment](#deployment)
+- [Versioning policy](#versioning-policy)
 - [Contract API](#contract-api)
+- [Administration](#administration)
 - [Architecture notes](#architecture-notes)
 - [Threat model](#threat-model)
 - [Troubleshooting](#troubleshooting)
@@ -73,7 +75,7 @@ After installing, return to the **monorepo root** and run:
 npm install
 ```
 
-npm workspaces will resolve `@xconfess/backend` and `@xconfess/contract`
+npm workspaces will resolve `xconfess-backend` and `xconfess-contracts`
 together. The contract workspace has no npm dependencies of its own —
 `npm install` is a no-op for it, but the presence of `package.json` lets
 npm scripts at the root delegate to it uniformly.
@@ -83,7 +85,7 @@ npm scripts at the root delegate to it uniformly.
 ## Project structure
 
 ```
-xconfess-contract/
+xconfess-contracts/
 ├── Cargo.toml                          # Rust package manifest and build profile
 ├── package.json                        # npm shim — delegates all scripts to cargo
 ├── README.md                           # This file
@@ -101,13 +103,28 @@ xconfess-contract/
 
 ## Building
 
+### Canonical reproducible flow (recommended)
+
+From the monorepo root, use one script for all contract crates:
+
+```bash
+./scripts/contracts-release.sh build
+```
+
+This command:
+
+- builds every workspace contract crate in release mode with `--locked`
+- targets `wasm32-unknown-unknown` consistently
+- verifies all expected `.wasm` outputs exist
+- writes `deployments/contract-wasm-manifest.json` with SHA-256 hashes
+
 ### Development build (fast, unoptimised)
 
 ```bash
 # From monorepo root
 npm run contract:build
 
-# From xconfess-contract/ directly
+# From xconfess-contracts/ directly
 cargo build --target wasm32-unknown-unknown
 ```
 
@@ -117,14 +134,14 @@ cargo build --target wasm32-unknown-unknown
 # From monorepo root
 npm run contract:build:release
 
-# From xconfess-contract/ directly
+# From xconfess-contracts/ directly
 cargo build --release --target wasm32-unknown-unknown
 ```
 
 The release WASM is written to:
 
 ```
-xconfess-contract/target/wasm32-unknown-unknown/release/xconfess_contract.wasm
+xconfess-contracts/target/wasm32-unknown-unknown/release/confession_anchor.wasm
 ```
 
 ### Optimise WASM binary (optional — reduces upload fees)
@@ -132,10 +149,10 @@ xconfess-contract/target/wasm32-unknown-unknown/release/xconfess_contract.wasm
 After a release build, run the Stellar CLI optimiser to strip unused sections:
 
 ```bash
-npm run optimize --workspace=xconfess-contract
+npm run optimize --workspace=xconfess-contracts
 # or:
 stellar contract optimize \
-  --wasm target/wasm32-unknown-unknown/release/xconfess_contract.wasm
+  --wasm target/wasm32-unknown-unknown/release/confession_anchor.wasm
 ```
 
 The optimised file is written next to the original with an `.optimized.wasm`
@@ -151,7 +168,7 @@ suffix.
 # From monorepo root
 npm run contract:test
 
-# From xconfess-contract/ directly
+# From xconfess-contracts/ directly
 cargo test
 ```
 
@@ -171,7 +188,7 @@ test result: ok. 23 passed; 0 failed; 0 ignored
 # From monorepo root
 npm run contract:test:integration
 
-# From xconfess-contract/ directly
+# From xconfess-contracts/ directly
 cargo test --test confession_moderation
 cargo test --test access_control
 ```
@@ -179,7 +196,7 @@ cargo test --test access_control
 ### Tests with output (useful for gas figures)
 
 ```bash
-npm run test:verbose --workspace=xconfess-contract
+npm run test:verbose --workspace=xconfess-contracts
 # or:
 cargo test -- --nocapture
 ```
@@ -191,8 +208,8 @@ cargo test -- --nocapture
 cargo install cargo-tarpaulin
 
 # Run
-npm run test:coverage --workspace=xconfess-contract
-# Coverage report written to xconfess-contract/coverage/lcov.info
+npm run test:coverage --workspace=xconfess-contracts
+# Coverage report written to xconfess-contracts/coverage/lcov.info
 ```
 
 ---
@@ -217,6 +234,30 @@ attributes are used in contract code; all lints must be resolved.
 
 ## Deployment
 
+### Canonical deployment flow (recommended)
+
+Use the same script used for reproducible builds:
+
+```bash
+# 1) Build and generate deterministic artifact manifest
+./scripts/contracts-release.sh build
+
+# 2) Deploy all contract crates to a network with one command
+./scripts/contracts-release.sh deploy --network testnet --source my-deployer-key
+```
+
+The deploy step writes network metadata to `deployments/<network>.json`, including:
+
+- deployed contract IDs
+- source key alias used for deployment
+- crate versions
+- wasm SHA-256 hashes
+
+See [`deployments/README.md`](../deployments/README.md) for the deployment
+metadata naming convention, commit policy, and redacted example. See
+[`docs/contract-release-and-upgrade-runbook.md`](../docs/contract-release-and-upgrade-runbook.md)
+for checksum review and post-deployment verification.
+
 ### Prerequisites for deployment
 
 1. Generate or import a Stellar keypair:
@@ -235,18 +276,16 @@ stellar network fund my-deployer-key --network testnet
 ### Deploy to testnet
 
 ```bash
-# Build a release WASM first
-npm run contract:build:release
-
-# Deploy
-STELLAR_SOURCE_ACCOUNT=my-deployer-key npm run contract:deploy:testnet
+# Build + deploy all crates
+./scripts/contracts-release.sh build
+./scripts/contracts-release.sh deploy --network testnet --source my-deployer-key
 ```
 
 Or directly:
 
 ```bash
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/xconfess_contract.wasm \
+  --wasm target/wasm32-unknown-unknown/release/confession_anchor.wasm \
   --network testnet \
   --source my-deployer-key
 ```
@@ -261,14 +300,30 @@ STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 
 ### Deploy to mainnet
 
+Mainnet deployment is allowed only after the same commit has been deployed and
+verified on testnet. Before running this command, complete the mainnet safety
+gate in
+[`docs/contract-release-and-upgrade-runbook.md`](../docs/contract-release-and-upgrade-runbook.md#mainnet-safety-gate)
+and record approvals from platform, security, and release owners.
+
 ```bash
-STELLAR_SOURCE_ACCOUNT=my-mainnet-key npm run contract:deploy:mainnet
+./scripts/contracts-release.sh deploy --network public --source my-mainnet-key
 ```
 
 > **Warning:** Mainnet deployments are permanent and incur real XLM fees.
-> Always test on testnet first.
+> Keep the previous `deployments/<network>.json` ready for rollback, and use
+> [`docs/contract-signer-rotation-runbook.md`](../docs/contract-signer-rotation-runbook.md)
+> for contracts with pause controls.
 
 ---
+
+## Versioning policy
+
+Contract versioning rules are documented in [`VERSIONING.md`](./VERSIONING.md).
+
+Release and deployment automation rely on that policy by recording each crate
+version alongside the built artifact hash in `deployments/contract-wasm-manifest.json`
+and in `deployments/<network>.json`.
 
 ## Contract API
 
@@ -322,6 +377,37 @@ Utility read method so off-chain consumers can branch behavior safely.
 ### `get_error_registry_version() → u32`
 
 Compatibility markers for event payload schema and error-code registry versions.
+
+---
+
+## Administration
+
+For comprehensive contract administration guidance, see:
+
+- **[Contract Lifecycle Guide](./CONTRACT_LIFECYCLE.md)** - Complete lifecycle management, initialization procedures, and security considerations
+- **[Administration Guide](./ADMIN_GUIDE.md)** - Practical operational procedures, monitoring, and troubleshooting
+- **[ReputationBadges Model](./REPUTATION_BADGES_MODEL.md)** - Detailed authorization model, badge system, and reputation tracking (ReputationBadges contract)
+
+### Quick Admin Reference
+
+```bash
+# Check contract status
+stellar contract info --id $CONTRACT_ID --network $NETWORK
+
+# Get current administrator
+stellar contract invoke --id $CONTRACT_ID --source-account $ADMIN_KEY -- get_admin
+
+# Transfer administrator rights
+stellar contract invoke --id $CONTRACT_ID --source-account $ADMIN_KEY -- transfer_admin --new_admin $NEW_ADMIN_ADDRESS
+```
+
+### Contract-Specific Admin
+
+| Contract | Admin Functions | Documentation |
+|----------|----------------|---------------|
+| ConfessionAnchor | initialize, transfer_owner, grant_admin, revoke_admin, pause, unpause | [Lifecycle Guide](./CONTRACT_LIFECYCLE.md#confessionanchor-contract), [Admin Guide](./ADMIN_GUIDE.md#confessionanchor-contract) |
+| ReputationBadges | initialize, transfer_admin, create_badge, award_badge, adjust_reputation | [Lifecycle Guide](./CONTRACT_LIFECYCLE.md#reputationbadges-contract), [Model Guide](./REPUTATION_BADGES_MODEL.md) |
+| AnonymousTipping | None (decentralized) | [Lifecycle Guide](./CONTRACT_LIFECYCLE.md#anonymoustipping-contract) |
 
 ---
 

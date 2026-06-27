@@ -1,8 +1,10 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { NotificationService } from '../../notifications/services/notification.service';
+import { NotificationService } from 'src/notifications/services/notification.service';
+import { NotificationType } from 'src/notifications/entities/notification.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ModerationRepositoryService } from './moderation-repository.service';
+import { AuditActionType } from '../audit-log/audit-log.entity';
+import { ModerationStatus } from './ai-moderation.service';
 import { UserRole } from '../user/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -29,37 +31,30 @@ export class ModerationEventsListener {
   constructor(
     private readonly notificationService: NotificationService,
     private readonly auditLogService: AuditLogService,
-    private readonly moderationRepoService: ModerationRepositoryService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
 
   @OnEvent('moderation.high-severity')
-  handleHighSeverity(event: HighSeverityEvent) {
+  async handleHighSeverity(event: HighSeverityEvent) {
     this.logger.warn(
       `HIGH SEVERITY CONTENT DETECTED - Confession: ${event.confessionId}, ` +
         `Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
     );
     try {
-      // Find all admin users
-      const admins = await this.userRepository.find({
-        where: { role: UserRole.ADMIN, is_active: true },
+      await this.notifyActiveAdmins({
+        title: 'High-Severity Content Detected',
+        message: `Confession ${event.confessionId} was rejected by moderation. Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
+        metadata: {
+          confessionId: event.confessionId,
+          score: event.score,
+          flags: event.flags,
+          eventType: 'high-severity',
+          moderationStatus: ModerationStatus.REJECTED,
+        },
       });
-      for (const admin of admins) {
-        await this.notificationService.createNotification({
-          type: 'system',
-          userId: admin.id,
-          title: 'High-Severity Content Detected',
-          message: `Confession ${event.confessionId} flagged as high-severity. Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
-          metadata: {
-            confessionId: event.confessionId,
-            score: event.score,
-            flags: event.flags,
-          },
-        });
-      }
       await this.auditLogService.log({
-        actionType: 'MODERATION_ESCALATION',
+        actionType: AuditActionType.MODERATION_ESCALATION,
         metadata: {
           eventType: 'high-severity',
           confessionId: event.confessionId,
@@ -68,7 +63,7 @@ export class ModerationEventsListener {
         },
         context: { userId: event.userId || null },
       });
-    } catch (err) {
+    } catch (err: any) {
       this.logger.error(
         `Failed to escalate high-severity moderation event: ${err.message}`,
       );
@@ -77,27 +72,25 @@ export class ModerationEventsListener {
   }
 
   @OnEvent('moderation.requires-review')
-  handleRequiresReview(event: RequiresReviewEvent) {
+  async handleRequiresReview(event: RequiresReviewEvent) {
     this.logger.log(
       `Content flagged for review - Confession: ${event.confessionId}, ` +
         `Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
     );
     try {
-      // Persist moderation log entry for review queue
-      await this.moderationRepoService.createLog(
-        '', // content not needed for escalation
-        {
+      await this.notifyActiveAdmins({
+        title: 'Confession Requires Moderation Review',
+        message: `Confession ${event.confessionId} requires review. Score: ${event.score}, Flags: ${event.flags.join(', ')}`,
+        metadata: {
+          confessionId: event.confessionId,
           score: event.score,
           flags: event.flags,
-          status: 'flagged',
-          requiresReview: true,
+          eventType: 'requires-review',
+          moderationStatus: ModerationStatus.FLAGGED,
         },
-        event.confessionId,
-        event.userId,
-        'escalation',
-      );
+      });
       await this.auditLogService.log({
-        actionType: 'MODERATION_ESCALATION',
+        actionType: AuditActionType.MODERATION_ESCALATION,
         metadata: {
           eventType: 'requires-review',
           confessionId: event.confessionId,
@@ -106,11 +99,33 @@ export class ModerationEventsListener {
         },
         context: { userId: event.userId || null },
       });
-    } catch (err) {
+    } catch (err: any) {
       this.logger.error(
         `Failed to escalate requires-review moderation event: ${err.message}`,
       );
       throw err;
     }
+  }
+
+  private async notifyActiveAdmins(params: {
+    title: string;
+    message: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    const admins = await this.userRepository.find({
+      where: { role: UserRole.ADMIN, is_active: true },
+    });
+
+    await Promise.all(
+      admins.map((admin) =>
+        this.notificationService.createNotification({
+          type: NotificationType.SYSTEM,
+          userId: String(admin.id),
+          title: params.title,
+          message: params.message,
+          metadata: params.metadata,
+        }),
+      ),
+    );
   }
 }

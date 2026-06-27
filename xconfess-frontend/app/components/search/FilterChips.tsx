@@ -11,6 +11,10 @@ interface FilterChipsProps {
   query?: string;
   onRemoveFilter: (key: FilterChipKey) => void;
   onClearAll: () => void;
+  statusChip?: {
+    label: string;
+    tone?: "warning" | "info";
+  } | null;
   className?: string;
 }
 
@@ -56,6 +60,7 @@ export function FilterChips({
   query,
   onRemoveFilter,
   onClearAll,
+  statusChip,
   className,
 }: FilterChipsProps) {
   const chips: { key: FilterChipKey; label: string }[] = [];
@@ -87,17 +92,30 @@ export function FilterChips({
       role="list"
       aria-label="Active filters"
     >
+      {statusChip && (
+        <span
+          role="listitem"
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm ${
+            statusChip.tone === "warning"
+              ? "border border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--foreground)]"
+              : "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--secondary)]"
+          }`}
+        >
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+          <span>{statusChip.label}</span>
+        </span>
+      )}
       {chips.map(({ key, label }) => (
         <span
           key={`${key}-${label}`}
           role="listitem"
-          className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-sm text-[var(--foreground)]"
         >
           <span>{label}</span>
           <button
             type="button"
             onClick={() => onRemoveFilter(key)}
-            className="p-0.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+            className="rounded-full p-0.5 text-[var(--secondary)] transition-colors hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)]"
             aria-label={`Remove filter: ${label}`}
           >
             <X className="h-3.5 w-3.5" />
@@ -107,7 +125,7 @@ export function FilterChips({
       <button
         type="button"
         onClick={onClearAll}
-        className="text-sm text-zinc-400 hover:text-white transition-colors"
+        className="text-sm text-[var(--secondary)] transition-colors hover:text-[var(--foreground)]"
       >
         Clear all
       </button>

@@ -1,7 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
+import { useAuth } from '@/app/lib/hooks/useAuth';
 import {
   validateLoginForm,
   parseLoginForm,
@@ -9,8 +13,12 @@ import {
   type ValidationErrors,
 } from '@/app/lib/utils/validation';
 
+const showDevMockAdminLogin =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_MOCK_ADMIN_LOGIN === 'true';
+
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -19,14 +27,17 @@ export default function LoginPage() {
   const doMockAdminLogin = async () => {
     setLoading(true);
     try {
-      // Establish a session via the proxy with mock signals
       await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'admin@example.com', password: 'mock', mock: true }),
+        body: JSON.stringify({
+          email: 'admin@example.com',
+          password: 'mock',
+          mock: true,
+        }),
       });
       router.push('/admin/dashboard');
-    } catch (e: any) {
+    } catch {
       setErrors({ password: 'Mock login failed' });
     } finally {
       setLoading(false);
@@ -34,7 +45,6 @@ export default function LoginPage() {
   };
 
   const doLogin = async () => {
-    // Validate using shared validation helpers
     const validationErrors = validateLoginForm({ email, password });
     setErrors(validationErrors);
 
@@ -42,7 +52,6 @@ export default function LoginPage() {
       return;
     }
 
-    // Parse and validate with typed helper
     const parsed = parseLoginForm({ email, password });
     if (!parsed.success) {
       setErrors(parsed.errors);
@@ -52,107 +61,137 @@ export default function LoginPage() {
     setLoading(true);
     setErrors({});
     try {
-      const res = await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: parsed.data.email, password: parsed.data.password }),
+      const user = await login({
+        email: parsed.data.email,
+        password: parsed.data.password,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || 'Login failed');
-      }
-
-      router.push('/admin/dashboard');
-    } catch (e: any) {
-      setErrors({ password: e?.message || 'Login failed' });
+      router.push(user.role === 'admin' ? '/admin/dashboard' : '/dashboard');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Login failed';
+      setErrors({ password: message });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Login</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            For quick testing, use <span className="font-medium">Mock Admin Login</span>.
-          </p>
-        </div>
-
-        {errors.email && (
-          <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded">
-            {errors.email}
-          </div>
-        )}
-
-        {errors.password && !errors.email && (
-          <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded">
-            {errors.password}
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <div>
-            <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Email
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                // Clear error on change
-                if (errors.email) {
-                  setErrors((prev) => ({ ...prev, email: undefined }));
-                }
-              }}
-              className="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-700 dark:text-white"
-              placeholder="admin@example.com"
-              autoComplete="email"
-            />
-          </div>
-          <div>
-            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Password
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                // Clear error on change
-                if (errors.password) {
-                  setErrors((prev) => ({ ...prev, password: undefined }));
-                }
-              }}
-              className="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-700 dark:text-white"
-              placeholder="••••••••"
-              autoComplete="current-password"
-            />
-          </div>
-
-          <button
-            onClick={doLogin}
-            disabled={loading}
-            className="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-
-          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={doMockAdminLogin}
-              className="w-full bg-gray-700 text-white px-4 py-2 rounded-md hover:bg-gray-800"
-            >
-              Mock Admin Login (Dummy Data)
-            </button>
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              This enables local mock data for admin endpoints (analytics, reports, users, audit logs).
+    <div className="editorial-shell min-h-screen px-4 py-10">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center justify-center">
+        <div className="grid w-full gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+          <div className="space-y-5">
+            <p className="eyebrow">Private access</p>
+            <h1 className="font-editorial text-5xl leading-[0.96] text-[var(--foreground)] sm:text-6xl">
+              Sign in to the quieter side of XConfess.
+            </h1>
+            <p className="max-w-md text-base leading-8 text-[var(--secondary)]">
+              The login experience now follows the same professional system as the
+              rest of the product: warmer surfaces, cleaner hierarchy, and calmer
+              emphasis.
             </p>
+          </div>
+
+          <div className="luxury-panel rounded-[34px] p-7 sm:p-8">
+            <div className="space-y-3">
+              <p className="eyebrow">Account sign in</p>
+              <h2 className="font-editorial text-4xl text-[var(--foreground)]">
+                Login
+              </h2>
+              <p className="text-sm leading-7 text-[var(--secondary)]">
+                Sign in with your account credentials.
+              </p>
+            </div>
+
+            {errors.email && (
+              <div className="mt-5 rounded-[20px] border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {errors.email}
+              </div>
+            )}
+
+            {errors.password && !errors.email && (
+              <div className="mt-5 rounded-[20px] border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {errors.password}
+              </div>
+            )}
+
+            <div className="mt-6 space-y-4">
+              <div>
+                <label
+                  htmlFor="login-email"
+                  className="mb-2 block text-sm font-medium text-[var(--foreground)]"
+                >
+                  Email
+                </label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (errors.email) {
+                      setErrors((prev) => ({ ...prev, email: undefined }));
+                    }
+                  }}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="login-password"
+                  className="mb-2 block text-sm font-medium text-[var(--foreground)]"
+                >
+                  Password
+                </label>
+                <Input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) {
+                      setErrors((prev) => ({ ...prev, password: undefined }));
+                    }
+                  }}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <div className="text-sm text-indigo-600 hover:text-indigo-400">
+                <Link href="/forgot-password">Forgot password?</Link>
+              </div>
+
+              <Button
+                type="button"
+                onClick={doLogin}
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? 'Signing in...' : 'Sign in'}
+              </Button>
+
+              {showDevMockAdminLogin && (
+                <div className="rounded-[22px] border border-[var(--accent-border)] bg-[var(--accent-soft)] p-4">
+                  <p className="mb-3 text-xs leading-6 text-[var(--secondary)]">
+                    Dev-only: mock admin shortcut. Enable with{' '}
+                    <code className="rounded bg-white/55 px-1.5 py-0.5 font-mono text-[var(--foreground)]">
+                      NEXT_PUBLIC_ENABLE_DEV_MOCK_ADMIN_LOGIN=true
+                    </code>
+                    .
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={doMockAdminLogin}
+                    disabled={loading}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Mock Admin Login
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -13,7 +13,20 @@ import { AnonymousConfession } from '../confession/entities/confession.entity';
 import { AnonymousUserService } from '../user/anonymous-user.service';
 import { UserAnonymousUser } from '../user/entities/user-anonymous-link.entity';
 import { AnonymousUser } from '../user/entities/anonymous-user.entity';
-import { OutboxEvent, OutboxStatus } from '../common/entities/outbox-event.entity';
+import {
+  OutboxEvent,
+  OutboxStatus,
+} from '../common/entities/outbox-event.entity';
+import {
+  MessageRepository,
+  ThreadViewerRole,
+} from './repository/message.repository';
+import {
+  decodeCursor,
+  encodeCursor,
+  CursorPaginatedResponseDto,
+} from '../common/pagination';
+import { GetMessagesQueryDto } from './dto/get-messages-query.dto';
 import {
   ENCRYPTED_PREVIEW,
   isEncryptedPayload,
@@ -30,9 +43,29 @@ export class MessagesService {
     private readonly userAnonRepo: Repository<UserAnonymousUser>,
     @InjectRepository(OutboxEvent)
     private readonly outboxRepo: Repository<OutboxEvent>,
+    private readonly customMessageRepository: MessageRepository,
     private readonly anonymousUserService: AnonymousUserService,
     private readonly dataSource: DataSource,
-  ) { }
+  ) {}
+
+  private resolveThreadViewerRole(
+    confessionAuthorId: string | undefined,
+    senderId: string,
+    userAnonIds: string[],
+  ): ThreadViewerRole | null {
+    const isAuthor =
+      !!confessionAuthorId && userAnonIds.includes(confessionAuthorId);
+    const isSender = userAnonIds.includes(senderId);
+
+    if (!isAuthor && !isSender) {
+      return null;
+    }
+
+    // Canonical ownership model:
+    // - Author view owns author-side read state
+    // - Sender view owns sender-side read state
+    return isAuthor ? 'AUTHOR' : 'SENDER';
+  }
 
   async create(
     createMessageDto: CreateMessageDto,
@@ -46,9 +79,18 @@ export class MessagesService {
 
     const confession = await this.confessionRepository.findOne({
       where: { id: createMessageDto.confession_id },
-      relations: ['anonymousUser', 'anonymousUser.userLinks', 'anonymousUser.userLinks.user'],
+      relations: [
+        'anonymousUser',
+        'anonymousUser.userLinks',
+        'anonymousUser.userLinks.user',
+      ],
     });
     if (!confession) throw new NotFoundException('Confession not found');
+
+    const authorUser = confession.anonymousUser?.userLinks?.[0]?.user;
+    if (authorUser && !authorUser.canReceiveReplies()) {
+      throw new ForbiddenException('This user is not accepting messages');
+    }
 
     // Get or create anonymous identity for this session
     const sender = await this.anonymousUserService.getOrCreateForUserSession(
@@ -95,7 +137,8 @@ export class MessagesService {
     confessionId: string,
     senderId: string,
     user: User,
-  ): Promise<Message[]> {
+    query?: GetMessagesQueryDto,
+  ): Promise<CursorPaginatedResponseDto<Message>> {
     if (!confessionId || confessionId.trim() === '') {
       throw new BadRequestException('Invalid confession ID');
     }
@@ -103,51 +146,140 @@ export class MessagesService {
       where: { id: confessionId },
       relations: ['anonymousUser'],
     });
-    if (!confession) throw new NotFoundException('Confession not found');
+    if (!confession) throw new NotFoundException('Thread not found');
 
     const userAnons = await this.userAnonRepo.find({
       where: { userId: user.id },
     });
     const anonIds = userAnons.map((ua) => ua.anonymousUserId);
 
-    const isAuthor = confession.anonymousUser?.id && anonIds.includes(confession.anonymousUser.id);
-    const isSender = anonIds.includes(senderId);
-
-    if (!isAuthor && !isSender) {
-      throw new ForbiddenException('You are not part of this conversation');
+    const viewerRole = this.resolveThreadViewerRole(
+      confession.anonymousUser?.id,
+      senderId,
+      anonIds,
+    );
+    if (!viewerRole) {
+      throw new NotFoundException('Thread not found');
     }
 
-    return this.messageRepository.find({
-      where: {
-        confession: { id: confessionId },
-        sender: { id: senderId },
-      },
-      order: { createdAt: 'ASC' }, // Use ASC for chat-like order
-    });
+    await this.customMessageRepository.markThreadRead(
+      confessionId,
+      senderId,
+      viewerRole,
+    );
+
+    const limit = query?.limit || 20;
+
+    const qb = this.messageRepository
+      .createQueryBuilder('message')
+      .where('message.confessionId = :confessionId', { confessionId })
+      .andWhere('message.senderId = :senderId', { senderId });
+
+    if (query?.cursor) {
+      const parsedCursor = decodeCursor<{ id: number; createdAt: string }>(
+        query.cursor,
+      );
+      if (parsedCursor) {
+        qb.andWhere(
+          'message.createdAt > :cursorDate OR (message.createdAt = :cursorDate AND message.id > :cursorId)',
+          {
+            cursorDate: parsedCursor.createdAt,
+            cursorId: parsedCursor.id,
+          },
+        );
+      }
+    } else if (query?.page && query.page > 1) {
+      qb.skip((query.page - 1) * limit);
+    }
+
+    const messages = await qb
+      .orderBy('message.createdAt', 'ASC')
+      .take(limit + 1)
+      .getMany();
+
+    const hasMore = messages.length > limit;
+    const resultMessages = hasMore ? messages.slice(0, limit) : messages;
+
+    let nextCursor: string | null = null;
+    if (hasMore && resultMessages.length > 0) {
+      const lastMessage = resultMessages[resultMessages.length - 1];
+      nextCursor = encodeCursor({
+        id: lastMessage.id,
+        createdAt: lastMessage.createdAt.toISOString(),
+      });
+    }
+
+    return new CursorPaginatedResponseDto(
+      resultMessages,
+      nextCursor,
+      hasMore,
+      limit,
+    );
   }
 
-  async findAllThreadsForUser(user: User): Promise<any[]> {
+  async findAllThreadsForUser(
+    user: User,
+    query: GetMessagesQueryDto,
+  ): Promise<CursorPaginatedResponseDto<any>> {
     const userAnons = await this.userAnonRepo.find({
       where: { userId: user.id },
     });
     const anonIds = userAnons.map((ua) => ua.anonymousUserId);
 
-    if (anonIds.length === 0) return [];
+    if (anonIds.length === 0) {
+      return new CursorPaginatedResponseDto([], null, false, query.limit || 20);
+    }
 
-    const messages = await this.messageRepository.find({
-      where: [
+    const qb = this.messageRepository
+      .createQueryBuilder('m')
+      .leftJoinAndSelect('m.confession', 'confession')
+      .leftJoinAndSelect('m.sender', 'sender')
+      .leftJoinAndSelect('confession.anonymousUser', 'confessionAuthor')
+      .where([
         { sender: { id: In(anonIds) } },
         { confession: { anonymousUser: { id: In(anonIds) } } },
-      ],
-      relations: ['confession', 'sender', 'confession.anonymousUser'],
-      order: { createdAt: 'DESC' },
-    });
+      ]);
+
+    if (query.cursor) {
+      const parsedCursor = decodeCursor<{ id: string; lastMessageAt: string }>(
+        query.cursor,
+      );
+      if (parsedCursor) {
+        qb.andWhere('m.createdAt < :cursorDate', {
+          cursorDate: parsedCursor.lastMessageAt,
+        });
+      }
+    } else if (query.page && query.page > 1) {
+      // Offset pagination for threads is hard with this in-memory grouping,
+      // but we can try to limit the message fetch.
+      // For now, only cursor pagination is truly supported for threads.
+    }
+
+    // We fetch a larger pool of messages to ensure we get enough threads
+    // This is still a bit of a hack until a proper Thread entity exists.
+    const messageLimit = (query.limit || 20) * 10;
+    const messages = await qb
+      .orderBy('m.createdAt', 'DESC')
+      .take(messageLimit)
+      .getMany();
 
     const threadsMap = new Map();
 
     messages.forEach((m) => {
       const threadId = `${m.confession.id}_${m.sender.id}`;
       if (!threadsMap.has(threadId)) {
+        const role = this.resolveThreadViewerRole(
+          m.confession.anonymousUser?.id,
+          m.sender.id,
+          anonIds,
+        );
+        const hasUnreadForRole =
+          role === 'AUTHOR'
+            ? !m.authorReadAt
+            : role === 'SENDER'
+              ? !!m.hasReply && !m.senderReadAt
+              : false;
+
         threadsMap.set(threadId, {
           confessionId: m.confession.id,
           senderId: m.sender.id,
@@ -158,13 +290,50 @@ export class MessagesService {
           lastMessage: m.isEncrypted ? ENCRYPTED_PREVIEW : m.content,
           lastMessageEncrypted: m.isEncrypted,
           lastMessageAt: m.createdAt,
-          hasUnread: false,
-          isAuthor: anonIds.includes(m.confession.anonymousUser?.id),
+          hasUnread: hasUnreadForRole,
+          unreadCount: hasUnreadForRole ? 1 : 0,
+          isAuthor: role === 'AUTHOR',
         });
+      } else {
+        const existing = threadsMap.get(threadId);
+        const role = this.resolveThreadViewerRole(
+          m.confession.anonymousUser?.id,
+          m.sender.id,
+          anonIds,
+        );
+        const messageUnread =
+          role === 'AUTHOR'
+            ? !m.authorReadAt
+            : role === 'SENDER'
+              ? !!m.hasReply && !m.senderReadAt
+              : false;
+        if (messageUnread) {
+          existing.hasUnread = true;
+          existing.unreadCount += 1;
+        }
       }
     });
 
-    return Array.from(threadsMap.values());
+    const allThreads = Array.from(threadsMap.values());
+    const limit = query.limit || 20;
+    const hasMore = allThreads.length > limit;
+    const resultThreads = hasMore ? allThreads.slice(0, limit) : allThreads;
+
+    let nextCursor: string | null = null;
+    if (hasMore && resultThreads.length > 0) {
+      const lastThread = resultThreads[resultThreads.length - 1];
+      nextCursor = encodeCursor({
+        id: `${lastThread.confessionId}_${lastThread.senderId}`,
+        lastMessageAt: lastThread.lastMessageAt.toISOString(),
+      });
+    }
+
+    return new CursorPaginatedResponseDto(
+      resultThreads,
+      nextCursor,
+      hasMore,
+      limit,
+    );
   }
 
   async reply(dto: ReplyMessageDto, user: User): Promise<Message> {
@@ -179,7 +348,13 @@ export class MessagesService {
     }
     const message = await this.messageRepository.findOne({
       where: { id: dto.message_id },
-      relations: ['confession', 'confession.anonymousUser', 'sender', 'sender.userLinks', 'sender.userLinks.user'],
+      relations: [
+        'confession',
+        'confession.anonymousUser',
+        'sender',
+        'sender.userLinks',
+        'sender.userLinks.user',
+      ],
     });
     if (!message) throw new NotFoundException('Message not found');
     if (message.hasReply) throw new ForbiddenException('Already replied');
