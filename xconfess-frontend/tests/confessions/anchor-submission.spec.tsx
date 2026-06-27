@@ -2,10 +2,10 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AnchorButton } from "@/app/components/confession/AnchorButton";
-import { useStellarWallet } from "@/app/lib/hooks/useStellarWallet";
-import { readyForAnchor, successfulAnchorResult } from "@/tests/mocks/anchor-fixtures";
+import { useStellarWallet } from "@/lib/hooks/useStellarWallet";
+import { readyForAnchor, successfulAnchorResult, getAnchorFetchMockResponse } from "@/tests/mocks/anchor-fixtures";
 
-jest.mock("@/app/lib/hooks/useStellarWallet", () => ({
+jest.mock("@/lib/hooks/useStellarWallet", () => ({
   useStellarWallet: jest.fn(),
 }));
 
@@ -17,6 +17,7 @@ describe("AnchorButton Duplicate Submission", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    global.fetch = jest.fn().mockImplementation(() => getAnchorFetchMockResponse("success"));
     mockUseStellarWallet.mockReturnValue({
       ...readyForAnchor(),
       anchor: mockAnchor,

@@ -18,6 +18,36 @@ export function getStellarExplorerUrl(
   return `${STELLAR_EXPERT_BASE}/${segment}/tx/${txHash}`;
 }
 
+export function mapAnchorApiError(status: number, message?: string): string {
+  const lower = message?.toLowerCase() ?? "";
+  if (lower.includes("already anchored")) {
+    return "This confession is already anchored.";
+  }
+  if (lower.includes("invalid") && lower.includes("hash")) {
+    return "Invalid transaction hash. Try anchoring again.";
+  }
+  if (lower.includes("not found")) {
+    return "Confession not found.";
+  }
+
+  switch (status) {
+    case 400:
+      return message || "Invalid anchor request.";
+    case 401:
+      return "Sign in to save your anchor.";
+    case 403:
+      return "You cannot anchor this confession.";
+    case 404:
+      return "Confession not found.";
+    case 409:
+      return "This confession is already anchored.";
+    case 503:
+      return "Server unavailable. Check your wallet — the on-chain anchor may have succeeded.";
+    default:
+      return message || "Failed to save anchor. Try again.";
+  }
+}
+
 export function hashConfession(content: string, timestamp?: number): string {
   const ts = timestamp || Date.now();
   const payload = JSON.stringify({ content, timestamp: ts });

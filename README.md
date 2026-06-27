@@ -94,7 +94,22 @@ The example file points all URLs at `localhost:5000` (backend) and `localhost:30
 NEXT_PUBLIC_DEV_BYPASS_AUTH=true
 ```
 
-### 4. Boot the full stack
+### 4. (Optional) Seed demo data
+
+Populate the database with demo confessions, users, reactions, comments, and reports for testing:
+
+```bash
+npm run seed
+```
+
+The seed script is idempotent — re-running it will not duplicate data. It creates:
+- 5 users (1 admin, 4 regular; password: `password123`)
+- 20 confessions across 5 categories
+- 50 reactions, 20 comments, 3 reports, 1 pending notification
+
+Stellar anchoring is stubbed when `STELLAR_FEATURES_ENABLED=false` (default).
+
+### 5. Boot the full stack
 
 > **Environment safety:** Never commit `.env` or `.env.local` files â€” only commit the `.env.example` templates. When sharing logs or asking for help in issues and PRs, redact all secrets, tokens, and private keys before pasting.
 
@@ -205,6 +220,10 @@ Before opening a PR, read the [small PR policy](docs/SMALL_PR_POLICY.md). Keep e
 When your PR is ready for review, use the [Ready for Review comment template](docs/WAVE_5_READY_FOR_REVIEW_TEMPLATE.md) to signal maintainers.
 
 When reporting bugs, see [Attaching Logs to Issues and PRs](docs/LOG_ATTACHING_GUIDE.md) for redaction guidelines.
+
+## GrantFox Campaign
+
+xConfess participates in the GrantFox Official Campaign. All related pull requests must include the labels `GrantFox OSS`, `Official Campaign`, and `Maybe Rewarded`. Ensure you link your PR to its corresponding issue using `Closes #ISSUE_NUMBER`. For more details, refer to the contributor guide gf-09 (link to be added once published).
 
 ## Package Docs
 - `xconfess-backend/README.md`

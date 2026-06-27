@@ -6,6 +6,7 @@ import {
   Res,
   UnauthorizedException,
   BadRequestException,
+  GoneException,
   NotFoundException,
   Post,
   Req,
@@ -36,7 +37,6 @@ export class DataExportController {
     const userId = String(req.user.id);
     const latest = await this.exportService.getLatestExport(userId);
     const history = await this.exportService.getExportHistory(userId);
-
     return {
       latest,
       history,
@@ -48,7 +48,6 @@ export class DataExportController {
    *
    * Returns the full lifecycle timeline for a single export job:
    * status, all timestamps, retry count, and last failure reason.
-   * Older clients that only need `status` can safely ignore the added fields.
    */
   @UseGuards(JwtAuthGuard)
   @Get(':id/status')
@@ -72,10 +71,15 @@ export class DataExportController {
     @Query('token') token: string | undefined,
     @Res() res: Response,
   ) {
-    // 1. Check Expiration
+    // 1. Check Expiration — 410 Gone for expired links (stable error shape)
     const expiresMs = parseInt(expires);
     if (isNaN(expiresMs) || Date.now() > expiresMs) {
-      throw new UnauthorizedException('Download link has expired.');
+      throw new GoneException({
+        statusCode: 410,
+        error: 'Gone',
+        message: 'Download link has expired.',
+        code: 'EXPORT_LINK_EXPIRED',
+      });
     }
 
     // 2. Verify Signature
@@ -107,11 +111,14 @@ export class DataExportController {
         token,
       );
       if (!valid) {
-        throw new UnauthorizedException(
-          'Download link has already been used or is invalid. Request a new link.',
-        );
+        throw new GoneException({
+          statusCode: 410,
+          error: 'Gone',
+          message: 'Download link has already been used or has expired. Request a new link.',
+          code: 'EXPORT_TOKEN_EXPIRED',
+        });
       }
-    }
+    } // ← correctly closes if (chunkIndex === undefined)
 
     // 4. Fetch from Service
     if (chunkIndex !== undefined) {
@@ -138,7 +145,6 @@ export class DataExportController {
     }
 
     if (exportReq.isChunked) {
-      // Return metadata and signed chunk URLs
       const downloadUrls = await Promise.all(
         Array.from({ length: exportReq.chunkCount }, (_, i) =>
           this.exportService.generateSignedDownloadUrl(id, userId, i),

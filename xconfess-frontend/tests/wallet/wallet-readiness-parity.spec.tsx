@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { AnchorButton } from "@/app/components/confession/AnchorButton";
 import { TipButton } from "@/app/components/confession/TipButton";
 import { useWallet, type UseWalletReturn } from "@/lib/hooks/useWallet";
-import { useStellarWallet } from "@/app/lib/hooks/useStellarWallet";
+import { useStellarWallet } from "@/lib/hooks/useStellarWallet";
 import {
   walletNotInstalled,
   disconnectedWallet,
@@ -14,7 +14,7 @@ import {
 } from "@/tests/mocks/wallet-fixtures";
 
 jest.mock("@/lib/hooks/useWallet", () => ({ useWallet: jest.fn() }));
-jest.mock("@/app/lib/hooks/useStellarWallet", () => ({ useStellarWallet: jest.fn() }));
+jest.mock("@/lib/hooks/useStellarWallet", () => ({ useStellarWallet: jest.fn() }));
 jest.mock("@/lib/services/tipping.service", () => ({
   sendTip: jest.fn(),
   verifyTip: jest.fn(),

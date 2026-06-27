@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,7 +9,9 @@ import appConfig from './config/app.config';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfessionModule } from './confession/confession.module';
+import { ConfessionDraftModule } from './confession-draft/confession-draft.module';
 import { SearchDiscoveryModule } from './search-discovery/search-discovery.module';
+import { CommentModule } from './comment/comment.module';
 import { ReactionModule } from './reaction/reaction.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -28,6 +30,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EncryptionModule } from './encryption/encryption.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DatabaseModule } from './database/database.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 // ✅ Canonical queue stack: @nestjs/bullmq (BullMQ v4 + ioredis)
 // The legacy @nestjs/bull import has been removed. All queues use BullMQ.
 import { BullModule } from '@nestjs/bullmq';
@@ -47,8 +50,13 @@ import { BullModule } from '@nestjs/bullmq';
       useFactory: (config: ConfigService) => ({
         throttlers: [
           {
-            ttl: config.get<number>('throttle.ttl') || 900,
-            limit: config.get<number>('throttle.limit') || 100,
+            ttl: config.get<number>('throttle.ttl') || 60_000,
+            limit: config.get<number>('throttle.limit') || 60,
+          },
+          {
+            name: 'strict',
+            ttl: (config.get<number>('throttle.strictTtlSeconds') || 60) * 1000,
+            limit: config.get<number>('throttle.strictLimit') || 5,
           },
         ],
       }),
@@ -71,14 +79,21 @@ import { BullModule } from '@nestjs/bullmq';
       useFactory: (config: ConfigService) => {
         const redisHost = config.get<string>('REDIS_HOST');
         const redisPort = config.get<number>('REDIS_PORT');
+        const jobsEnabled =
+          config.get<string>('ENABLE_BACKGROUND_JOBS') === 'true';
 
-        if (config.get<string>('ENABLE_BACKGROUND_JOBS') === 'true') {
+        if (jobsEnabled) {
           if (!redisHost || !redisPort) {
             throw new Error(
               'Misconfiguration: ENABLE_BACKGROUND_JOBS is true but ' +
                 'REDIS_HOST or REDIS_PORT is missing from the environment.',
             );
           }
+        } else {
+          new Logger('Bootstrap').warn(
+            'ENABLE_BACKGROUND_JOBS is not "true" — BullMQ workers are disabled. ' +
+              'Queue producers will silently skip enqueue calls. Redis connectivity is not required.',
+          );
         }
 
         return {
@@ -109,8 +124,10 @@ import { BullModule } from '@nestjs/bullmq';
     UserModule,
     AuthModule,
     ConfessionModule,
+    ConfessionDraftModule,
     SearchDiscoveryModule,
     ReactionModule,
+    CommentModule,
     MessagesModule,
     AdminModule,
     ReportModule,
@@ -122,6 +139,7 @@ import { BullModule } from '@nestjs/bullmq';
     EncryptionModule,
     CacheModule,
     DatabaseModule,
+    FeatureFlagsModule,
   ],
   controllers: [AppController],
   providers: [

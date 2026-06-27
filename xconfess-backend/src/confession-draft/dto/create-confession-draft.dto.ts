@@ -14,6 +14,11 @@ export class CreateConfessionDraftDto {
   content: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  category?: string;
+
+  @IsOptional()
   @IsISO8601({}, { message: 'scheduledFor must be a valid ISO 8601 date' })
   scheduledFor?: string;
 

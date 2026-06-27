@@ -36,6 +36,7 @@ import { TemplateCategory } from '../comment/entities/moderation-note-template.e
 import { Request } from 'express';
 import { GetUser } from '../auth/get-user.decorator';
 import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import { StellarDiagnosticsService } from './services/stellar-diagnostics.service';
 import {
   IsString,
   IsEnum,
@@ -86,6 +87,22 @@ export class UpdateTemplateDto {
   isActive?: boolean;
 }
 
+export class ExportAuditDto {
+  @IsNotEmpty()
+  @IsString()
+  label: string;
+
+  @IsOptional()
+  rowCount?: number;
+
+  @IsOptional()
+  filters?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  requestId?: string;
+}
+
 type AuthedRequest = Request & { user?: RequestUser };
 
 const auditActionTypeValues = new Set<string>(
@@ -112,6 +129,7 @@ export class AdminController {
     private readonly moderationService: ModerationService,
     private readonly moderationTemplateService: ModerationTemplateService,
     private readonly auditLogService: AuditLogService,
+    private readonly stellarDiagnosticsService: StellarDiagnosticsService,
   ) {}
 
   // Reports
@@ -187,6 +205,23 @@ export class AdminController {
       limit: parseInt(limit || '50', 10),
       offset: parseInt(offset || '0', 10),
     };
+  }
+
+  @Get('reports/stats')
+  @ApiOperation({ summary: 'Get report queue health stats' })
+  @ApiResponse({
+    status: 200,
+    description: 'Report queue metrics.',
+    schema: {
+      example: {
+        pendingCount: 5,
+        oldestUnresolvedAge: 86400,
+        resolvedTodayCount: 3,
+      },
+    },
+  })
+  async getReportStats() {
+    return this.adminService.getReportStats();
   }
 
   @Get('reports/:id')
@@ -438,6 +473,45 @@ export class AdminController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteTemplate(@Param('id') id: string) {
     await this.moderationTemplateService.delete(parseInt(id, 10));
+  }
+
+  // Stellar diagnostics (Issue #1119)
+  @Get('stellar/diagnostics')
+  @ApiOperation({
+    summary: 'Stellar network and contract diagnostics with Horizon liveness ping',
+    description:
+      'Returns configured network, contract IDs, and a live Horizon reachability check. ' +
+      'Never exposes secrets. Horizon unreachable returns a degraded indicator, not a 500.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stellar diagnostics result',
+    schema: {
+      example: {
+        network: 'testnet',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        sorobanRpcUrl: 'https://soroban-rpc-testnet.stellar.org',
+        contractIds: {
+          confessionAnchor: 'CBFR2MDZBQPTNBIJCT32MTDDQLW2AQNDWNO777F3QT6ANYKTHETQZWD3',
+          reputationBadges: null,
+          tippingSystem: null,
+        },
+        horizonStatus: 'ok',
+        horizonLatencyMs: 142,
+        deploymentMetadata: {
+          loaded: true,
+          generatedAtUtc: '2026-05-21T12:34:56Z',
+          isStale: false,
+          ageDays: 7,
+          loadError: null,
+        },
+        checkedAt: '2026-06-20T10:00:00.000Z',
+      },
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required.' })
+  async getStellarDiagnostics() {
+    return this.stellarDiagnosticsService.getDiagnostics();
   }
 
   // Operator anchor & tip lookup (Issue #778)

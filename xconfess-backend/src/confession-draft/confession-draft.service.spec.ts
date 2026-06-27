@@ -73,6 +73,14 @@ describe('ConfessionDraftService', () => {
     expect(res.content).toBe('hello');
   });
 
+  it('enforces a 10 draft limit per user', async () => {
+    repo.count.mockResolvedValue(10);
+
+    await expect(service.createDraft(1, 'over limit')).rejects.toThrow(
+      'Draft limit reached (max 10)',
+    );
+  });
+
   describe('updateDraft', () => {
     it('successfully updates and saves revision when version matches', async () => {
       const draft = {
@@ -119,6 +127,29 @@ describe('ConfessionDraftService', () => {
           version: 1,
         }),
       ).rejects.toThrow('Conflict detected');
+    });
+
+    it('allows autosave updates without a version', async () => {
+      const draft = {
+        id: 'draft1',
+        userId: 1,
+        content: encryptConfession('old content', AES_KEY),
+        version: 2,
+        revisions: [],
+        status: ConfessionDraftStatus.DRAFT,
+      } as any;
+
+      repo.findOne.mockResolvedValue(draft);
+      repo.save.mockImplementation(async (x: any) => x);
+
+      const res = await service.autoSaveDraft(1, {
+        id: 'draft1',
+        content: 'autosaved content',
+        category: 'female',
+      });
+
+      expect(res.content).toBe('autosaved content');
+      expect(res.category).toBe('female');
     });
 
     it('bounds revision history to 10 entries', async () => {

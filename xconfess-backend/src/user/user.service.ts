@@ -226,6 +226,168 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
+  async getProfileSummary(userId: number, page = 1, limit = 10): Promise<any> {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), 25);
+    const offset = (safePage - 1) * safeLimit;
+
+    const anonRows = await this.userRepository.manager.query(
+      'SELECT anonymous_user_id as id FROM user_anonymous_users WHERE user_id = $1',
+      [userId],
+    );
+    const anonIds = anonRows.map((row: { id: string }) => row.id);
+
+    const emptyStats = {
+      confessions: 0,
+      reactions: 0,
+      comments: 0,
+      tipsSent: 0,
+      tipsReceived: 0,
+    };
+
+    if (anonIds.length === 0) {
+      return {
+        profile: {
+          id: user.id,
+          username: user.username,
+          joinDate: user.createdAt,
+        },
+        stats: emptyStats,
+        badges: this.buildReputationBadges(0),
+        history: {
+          data: [],
+          meta: { total: 0, page: safePage, limit: safeLimit, totalPages: 0 },
+        },
+      };
+    }
+
+    const [statsRow] = await this.userRepository.manager.query(
+      `
+      SELECT
+        (SELECT COUNT(*)::int FROM anonymous_confessions c
+          WHERE c.anonymous_user_id = ANY($1) AND c."isDeleted" = false) AS confessions,
+        (SELECT COUNT(*)::int FROM reaction r
+          JOIN anonymous_confessions c ON c.id = r.confession_id
+          WHERE c.anonymous_user_id = ANY($1) AND c."isDeleted" = false) AS reactions,
+        (SELECT COUNT(*)::int FROM comments com
+          JOIN anonymous_confessions c ON c.id = com."confessionId"
+          WHERE c.anonymous_user_id = ANY($1) AND com."isDeleted" = false) AS comments,
+        (SELECT COALESCE(SUM(t.amount), 0)::float FROM tips t
+          JOIN anonymous_confessions c ON c.id = t.confession_id
+          WHERE c.anonymous_user_id = ANY($1)) AS tips_received
+      `,
+      [anonIds],
+    );
+
+    const [totalRow] = await this.userRepository.manager.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM anonymous_confessions c
+      WHERE c.anonymous_user_id = ANY($1)
+        AND c."isDeleted" = false
+        AND c.is_hidden = false
+      `,
+      [anonIds],
+    );
+
+    const historyRows = await this.userRepository.manager.query(
+      `
+      SELECT
+        c.id,
+        c.message,
+        c.gender,
+        c.view_count,
+        c.created_at,
+        c.is_anchored,
+        c.stellar_tx_hash,
+        (SELECT COUNT(*)::int FROM reaction r WHERE r.confession_id = c.id) AS reaction_count,
+        (SELECT COUNT(*)::int FROM comments com WHERE com."confessionId" = c.id AND com."isDeleted" = false) AS comment_count
+      FROM anonymous_confessions c
+      WHERE c.anonymous_user_id = ANY($1)
+        AND c."isDeleted" = false
+        AND c.is_hidden = false
+      ORDER BY c.created_at DESC, c.id DESC
+      LIMIT $2 OFFSET $3
+      `,
+      [anonIds, safeLimit, offset],
+    );
+
+    const history = historyRows.map((row: any) => ({
+      id: row.id,
+      message: decryptConfession(row.message, this.aesKey),
+      gender: row.gender,
+      viewCount: Number(row.view_count ?? 0),
+      reactions: Number(row.reaction_count ?? 0),
+      comments: Number(row.comment_count ?? 0),
+      createdAt: row.created_at,
+      isAnchored: row.is_anchored === true,
+      stellarTxHash: row.stellar_tx_hash,
+    }));
+
+    const confessions = Number(statsRow?.confessions ?? 0);
+    return {
+      profile: {
+        id: user.id,
+        username: user.username,
+        joinDate: user.createdAt,
+      },
+      stats: {
+        confessions,
+        reactions: Number(statsRow?.reactions ?? 0),
+        comments: Number(statsRow?.comments ?? 0),
+        tipsSent: 0,
+        tipsReceived: Number(statsRow?.tips_received ?? 0),
+      },
+      badges: this.buildReputationBadges(confessions),
+      history: {
+        data: history,
+        meta: {
+          total: Number(totalRow?.total ?? 0),
+          page: safePage,
+          limit: safeLimit,
+          totalPages: Math.ceil(Number(totalRow?.total ?? 0) / safeLimit),
+        },
+      },
+    };
+  }
+
+  private buildReputationBadges(confessionCount: number) {
+    const contractId = process.env.REPUTATION_BADGES_CONTRACT_ID ?? null;
+    const badges = [
+      {
+        id: 'reputation-contract',
+        name: contractId ? 'Reputation linked' : 'Reputation pending',
+        description: contractId
+          ? `Backed by reputation-badges contract ${contractId}`
+          : 'Reputation badge contract is not configured.',
+        contractId,
+      },
+    ];
+
+    if (confessionCount >= 1) {
+      badges.push({
+        id: 'first-confession',
+        name: 'First confession',
+        description: 'Published at least one confession.',
+        contractId,
+      });
+    }
+
+    if (confessionCount >= 10) {
+      badges.push({
+        id: 'steady-voice',
+        name: 'Steady voice',
+        description: 'Published ten or more confessions.',
+        contractId,
+      });
+    }
+
+    return badges;
+  }
+
   // =========================
   // 🔐 PRIVACY SETTINGS (FIXED)
   // =========================

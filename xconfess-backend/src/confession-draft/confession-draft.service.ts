@@ -26,7 +26,7 @@ import { ConfessionService } from '../confession/confession.service';
 import { UpdateConfessionDraftDto } from './dto/update-confession-draft.dto';
 import { DateTime } from 'luxon';
 
-const MAX_DRAFTS_PER_USER = 50;
+const MAX_DRAFTS_PER_USER = 10;
 const MAX_PUBLISH_ATTEMPTS = 5;
 
 @Injectable()
@@ -74,6 +74,7 @@ export class ConfessionDraftService {
   async createDraft(
     userId: number,
     content: string,
+    category?: string,
     scheduledFor?: string,
     timezone?: string,
   ) {
@@ -99,6 +100,7 @@ export class ConfessionDraftService {
     const draft = this.draftRepo.create({
       userId,
       content: encrypted,
+      category: category ?? null,
       scheduledFor: scheduledForUtc,
       timezone: timezone ?? null,
       status,
@@ -132,7 +134,7 @@ export class ConfessionDraftService {
       throw new BadRequestException('Cannot edit a posted draft');
     }
 
-    if (draft.version !== dto.version) {
+    if (dto.version !== undefined && draft.version !== dto.version) {
       throw new ConflictException({
         message:
           'Conflict detected: draft has been modified by another session',
@@ -152,8 +154,27 @@ export class ConfessionDraftService {
       draft.content = encryptConfession(dto.content, this.aesKey);
     }
 
+    if (dto.category !== undefined) {
+      draft.category = dto.category || null;
+    }
+
     const saved = await this.draftRepo.save(draft);
     return this.sanitizeForResponse(saved);
+  }
+
+  async autoSaveDraft(
+    userId: number,
+    dto: UpdateConfessionDraftDto & { id?: string },
+  ) {
+    if (dto.id) {
+      return this.updateDraft(userId, dto.id, dto);
+    }
+
+    if (!dto.content?.trim()) {
+      throw new BadRequestException('content is required');
+    }
+
+    return this.createDraft(userId, dto.content, dto.category);
   }
 
   async deleteDraft(userId: number, id: string) {
@@ -162,6 +183,12 @@ export class ConfessionDraftService {
     if (draft.userId !== userId) throw new ForbiddenException();
     await this.draftRepo.remove(draft);
     return { message: 'Draft deleted' };
+  }
+
+  async deleteAllDrafts(userId: number) {
+    const drafts = await this.draftRepo.find({ where: { userId } });
+    await Promise.all(drafts.map((draft) => this.draftRepo.remove(draft)));
+    return { message: 'Drafts deleted' };
   }
 
   async scheduleDraft(

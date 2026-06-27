@@ -18,10 +18,40 @@ env:
   NEXT_TELEMETRY_DISABLED: '1'
   RUST_BACKTRACE: 1
   CI: true
+  SKIP_E2E: ${{ vars.SKIP_E2E || 'false' }}
 
 jobs:
+  changes:
+    name: Detect Changed Files
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'xconfess-backend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            frontend:
+              - 'xconfess-frontend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            contracts:
+              - 'xconfess-contracts/**'
+
   backend:
     name: Backend / build and test
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -46,6 +76,8 @@ jobs:
 
   frontend:
     name: Frontend / build and test
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -67,8 +99,15 @@ jobs:
       - name: Test frontend
         run: npm run test --workspace=xconfess-frontend
 
+      - name: Run E2E tests
+        if: ${{ env.SKIP_E2E != 'true' }}
+        run: npx playwright install chromium && npm run test:e2e --workspace=xconfess-frontend
+        continue-on-error: true
+
   contracts:
     name: Contracts / fmt clippy and test
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

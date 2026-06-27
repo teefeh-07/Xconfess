@@ -25,9 +25,15 @@ export class ConfessionDraftController {
     return this.service.createDraft(
       userId,
       dto.content,
+      dto.category,
       dto.scheduledFor,
       dto.timezone,
     );
+  }
+
+  @Post('autosave')
+  autoSave(@GetUser('id') userId: number, @Body() dto: UpdateConfessionDraftDto) {
+    return this.service.autoSaveDraft(userId, dto);
   }
 
   @Get()
@@ -47,6 +53,20 @@ export class ConfessionDraftController {
     @Body() dto: UpdateConfessionDraftDto,
   ) {
     return this.service.updateDraft(userId, id, dto);
+  }
+
+  @Patch(':id/autosave')
+  autoSaveExisting(
+    @GetUser('id') userId: number,
+    @Param('id') id: string,
+    @Body() dto: UpdateConfessionDraftDto,
+  ) {
+    return this.service.autoSaveDraft(userId, { ...dto, id });
+  }
+
+  @Delete()
+  removeAll(@GetUser('id') userId: number) {
+    return this.service.deleteAllDrafts(userId);
   }
 
   @Delete(':id')

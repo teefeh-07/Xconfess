@@ -25,6 +25,8 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { LoggerModule } from '../logger/logger.module';
 import { EmailModule } from '../email/email.module';
 
+const jobsEnabled = process.env.ENABLE_BACKGROUND_JOBS === 'true';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -69,7 +71,7 @@ import { EmailModule } from '../email/email.module';
   providers: [
     NotificationService,
     EmailNotificationService,
-    NotificationProcessor,
+    ...(jobsEnabled ? [NotificationProcessor] : []),
     NotificationGateway,
     WebSocketLogger,
     OutboxDispatcherService,

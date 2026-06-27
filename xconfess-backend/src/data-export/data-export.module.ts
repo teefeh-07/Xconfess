@@ -10,6 +10,8 @@ import { User } from '../user/entities/user.entity';
 import { EmailModule } from '../email/email.module';
 import { EXPORT_QUEUE_NAME } from './data-export.constants';
 
+const jobsEnabled = process.env.ENABLE_BACKGROUND_JOBS === 'true';
+
 @Module({
   imports: [
     BullModule.registerQueue({
@@ -19,7 +21,7 @@ import { EXPORT_QUEUE_NAME } from './data-export.constants';
     EmailModule,
   ],
   controllers: [DataExportController],
-  providers: [DataExportService, ExportProcessor],
+  providers: [DataExportService, ...(jobsEnabled ? [ExportProcessor] : [])],
   exports: [DataExportService],
 })
 export class DataExportModule {}

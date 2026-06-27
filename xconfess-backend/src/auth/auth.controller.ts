@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   HttpException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -36,6 +37,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @RateLimit(5, 300)
   @ApiOperation({ summary: 'Log in with email and password' })
   @ApiBody({ type: LoginDto })
