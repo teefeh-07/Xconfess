@@ -1,7 +1,9 @@
-# Wave 5 Readiness: Idempotent Tip Verification, Realtime Playbook & Test Infrastructure
+# Wave 5 Readiness: API Versioning, Mobile Nav, Idempotent Tips, Realtime Playbook & Test Infrastructure
 
 ## Closes
 
+- Closes #1297
+- Closes #1308
 - Closes #170
 - Closes #462
 - Relates to #173 (chain-reconciliation backoff hardening)
@@ -10,7 +12,24 @@
 
 ## What changed
 
-This PR bundles the final backend, docs, and test-infrastructure pieces needed for Wave 5 readiness.
+This PR bundles the Wave 5 readiness work across the backend API surface, mobile UI, tipping reliability, operational docs, and test infrastructure.
+
+### Issue #1297 — API versioning (v1)
+
+- Set the global API prefix to `/api/v1`.
+- Added `301` redirects for legacy `/api/` paths so existing clients migrate safely.
+- Moved Swagger/OpenAPI docs to `/api/v1/docs`.
+- Excluded health endpoints from the versioned prefix so probes keep working.
+- Updated all E2E and integration tests to call `/api/v1/` routes.
+
+### Issue #1308 — Mobile responsive bottom navigation
+
+- Added a `BottomNav` component that replaces the sidebar on mobile breakpoints.
+- Created the `/confess` and `/notifications` mobile-first pages.
+- Implemented pull-to-refresh on `ConfessionFeed`.
+- Added swipe-to-react gestures on `ConfessionCard`.
+- Updated the frontend API base URL to `/api/v1`.
+- Made `NotificationCenter` responsive with dark-mode support.
 
 ### Issue #170 — Idempotent tip verification
 
@@ -53,6 +72,8 @@ This PR bundles the final backend, docs, and test-infrastructure pieces needed f
 
 ## Why
 
+- Stabilizes the public API contract with a clean v1 path and safe redirects.
+- Makes the mobile experience first-class with bottom navigation, gestures, and responsive notifications.
 - Prevents double-crediting of tips on replay and gives callers deterministic, RFC-style HTTP status codes.
 - Gives on-call operators a concrete, step-by-step runbook for realtime/WebSocket incidents.
 - Restores green tests for the touched backend modules and the frontend notification dashboard.
@@ -73,7 +94,16 @@ This PR bundles the final backend, docs, and test-infrastructure pieces needed f
    npx jest --config jest.config.ts notifications
    ```
 
-3. **Realtime playbook review**
+3. **API versioning sanity check**
+   - Start the backend and confirm routes respond under `/api/v1/`.
+   - Confirm legacy `/api/` paths return `301` to `/api/v1/`.
+   - Confirm Swagger is reachable at `/api/v1/docs` and health endpoints remain un-prefixed.
+
+4. **Mobile nav / responsive UI**
+   - Run the frontend dev server and view at ≤ 390 px width.
+   - Confirm `BottomNav` appears, `/confess` and `/notifications` are reachable, and `NotificationCenter` renders correctly in dark mode.
+
+5. **Realtime playbook review**
    - Read `docs/realtime-incident-playbook.md`.
    - Confirm `/websocket/health` and `/websocket/stats` endpoints exist in `xconfess-backend/src/websocket/websocket-health.controller.ts`.
 
@@ -108,7 +138,7 @@ Tests:       48 passed, 48 total
 
 - [x] This PR touches only the files needed to resolve the linked issues
 - [x] I have not included unrelated refactors, style fixes, or dependency upgrades
-- [ ] Changed lines > 400 / files > 8 — the playbook doc and test fixtures push this over the small-PR threshold, but the changes are tightly coupled to the two linked issues and cannot be split without losing context.
+- [ ] Changed lines > 400 / files > 8 — this is a bundled Wave 5 readiness PR covering five linked issues, so it intentionally exceeds the small-PR threshold.
 
 ---
 
