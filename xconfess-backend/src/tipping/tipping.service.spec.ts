@@ -110,16 +110,34 @@ describe('TippingService', () => {
     });
 
     it('should reject conflicting payload (same txId, different confession)', async () => {
+      const differentConfessionId = 'different-confession';
       const existingTip = {
         id: 'existing-tip',
         txId: 'tx123',
-        confessionId: 'different-confession',
+        confessionId: differentConfessionId,
         amount: 1.0,
+        idempotencyKey: service['generateIdempotencyKey'](
+          differentConfessionId,
+          'tx123',
+        ),
         verificationStatus: TipVerificationStatus.VERIFIED,
       };
 
+      const expectedIdempotencyKey = service['generateIdempotencyKey'](
+        confessionId,
+        'tx123',
+      );
+
       mockConfessionRepo.findOne.mockResolvedValue({ id: confessionId });
-      mockTipRepo.findOne.mockResolvedValue(existingTip);
+      mockTipRepo.findOne.mockImplementation((options: any) => {
+        if (options?.where?.idempotencyKey === expectedIdempotencyKey) {
+          return null;
+        }
+        if (options?.where?.txId === 'tx123') {
+          return existingTip;
+        }
+        return null;
+      });
 
       await expect(
         service.verifyAndRecordTip(confessionId, mockDto),

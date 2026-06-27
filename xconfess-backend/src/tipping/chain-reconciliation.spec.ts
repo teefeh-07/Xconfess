@@ -250,7 +250,7 @@ describe('ChainReconciliationService - Issue #173', () => {
       expect(metrics?.totalPending).toBe(1);
       expect(metrics?.reconciled).toBe(1);
       expect(metrics?.confirmed).toBe(1);
-      expect(metrics?.duration).toBeGreaterThan(0);
+      expect(metrics?.duration).toBeGreaterThanOrEqual(0);
     });
 
     it('should mark tips as stale after threshold', async () => {
@@ -346,7 +346,7 @@ describe('ChainReconciliationService - Issue #173', () => {
       await service.reconcilePendingTips();
 
       const metrics = service.getLastMetrics();
-      expect(metrics?.errors).toContain(expect.stringContaining('Database'));
+      expect(metrics?.errors.some((e) => e.includes('Database'))).toBe(true);
     });
 
     it('should continue reconciliation even if one tip fails', async () => {

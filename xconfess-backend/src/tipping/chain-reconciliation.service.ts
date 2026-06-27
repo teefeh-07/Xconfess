@@ -74,9 +74,12 @@ export class ChainReconciliationService {
       this.MAX_BACKOFF_MS,
     );
 
-    // Add jitter: ±20% of backoff time
+    // Add jitter: ±20% of backoff time, then cap at the maximum
     const jitter = exponentialBackoff * 0.2 * (Math.random() * 2 - 1);
-    return Math.max(exponentialBackoff + jitter, this.INITIAL_BACKOFF_MS);
+    return Math.max(
+      Math.min(exponentialBackoff + jitter, this.MAX_BACKOFF_MS),
+      this.INITIAL_BACKOFF_MS,
+    );
   }
 
   /**
