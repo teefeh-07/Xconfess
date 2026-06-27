@@ -111,7 +111,7 @@ export class QueueHealthIndicator extends HealthIndicator {
           ]);
 
           const start = Date.now();
-          await client.ping();
+          await (client as unknown as { ping(): Promise<string> }).ping();
           const latencyMs = Date.now() - start;
 
           const workerCount = workers.length;
