@@ -1,38 +1,91 @@
-# Websocket Threat Model
+# WebSocket Threat Model — xConfess
 
-## Entry Points
+## Scope
 
-- `/notifications` is authenticated and private. Clients must provide a JWT in
-  `handshake.auth.token`, an `Authorization: Bearer` header, or an accepted
-  auth cookie. The gateway only joins `user:<authenticatedUserId>` rooms and
-  rejects requested user rooms that do not match the authenticated socket owner.
-- `/reactions` is public read fanout for confession-level reaction updates. It
-  only joins `confession:<confessionId>` rooms and rate-limits subscription
-  churn per socket.
-- Global Socket.IO server options are built by
-  `src/websocket/websocket.adapter.ts` and set CORS to the configured frontend
-  origin with credentials enabled.
+Covers the `/notifications` and `/reactions` Socket.IO namespaces served by the NestJS backend.
 
-## Primary Threats And Controls
+---
 
-- Unauthenticated notification access: `WsJwtGuard` rejects missing tokens,
-  invalid tokens, and verified tokens without a subject claim before handlers
-  use socket identity.
-- Cross-user private room joins: notification subscription requests compare the
-  requested user ID to `client.data.userId`; mismatches emit
-  `subscription:rejected` and do not call `join`.
-- Wrong-origin browser connections: websocket CORS is configured from
-  `FRONTEND_URL` or `app.frontendUrl`; tests assert the policy is not wildcard
-  and does not include unrelated origins.
-- Public reaction namespace abuse: reactions do not expose private rooms, keep
-  fanout scoped to `confession:<id>`, cap per-IP connections, and apply
-  per-socket rate limiting.
+## Assets
 
-## Validation Notes
+| Asset | Classification |
+|---|---|
+| JWT access token | Secret — must never appear in logs |
+| Session cookie | Secret — must never appear in logs |
+| User email | PII — excluded from telemetry |
+| Wallet address | PII — excluded from telemetry |
+| `userId` (UUID) | Internal identifier — safe to log |
+| Correlation ID | Ephemeral trace key — safe to log |
 
-- Unit coverage lives in
-  `src/notifications/gateways/notification.gateway.spec.ts` and
-  `test/reactions.gateway.spec.ts`.
-- Browser smoke validation, when needed, should connect from the configured
-  frontend origin and then repeat from a non-allowed origin to confirm the
-  Socket.IO CORS rejection appears in the browser console/network panel.
+---
+
+## Threat: Auth credential leakage via logs
+
+**Vector:** A failed WebSocket handshake triggers a log entry containing the raw `Authorization` header or `Cookie`.
+
+**Mitigation (implemented):**
+
+- `scrubPii()` in `ws-auth-telemetry.ts` strips any key matching `/^(authorization|cookie|token|jwt|email|wallet|password|secret)/i` before it reaches the logger.
+- Gateways never pass the raw token string to `emitWsAuthFailure`.
+- The `auth_error` event sent to the client contains only a `reason` enum code and a `correlationId` — never the raw error message.
+
+---
+
+## Auth failure reason codes
+
+| Code | Meaning |
+|---|---|
+| `TOKEN_MISSING` | No `Authorization` header or `token` query param present |
+| `TOKEN_MALFORMED` | Header present but JWT structure is invalid |
+| `TOKEN_EXPIRED` | JWT signature is valid but `exp` claim has passed |
+| `TOKEN_INVALID_SIGNATURE` | JWT signature verification failed |
+| `USER_NOT_FOUND` | Token valid but referenced user does not exist |
+| `SESSION_REVOKED` | Token is on the revocation list |
+| `UNKNOWN` | Catch-all for unclassified errors |
+
+---
+
+## Correlation ID
+
+Every auth failure emits a UUID v4 **correlation ID** that:
+
+1. Is logged server-side alongside the reason code and gateway name.
+2. Is sent to the client in the `auth_error` event payload.
+3. Can be used to correlate client-reported errors with server logs **without** any PII.
+
+---
+
+## Logging contract
+
+\`\`\`
+WS_AUTH_FAILURE gateway=<GatewayName> reason=<CODE> correlationId=<uuid>
+\`\`\`
+
+Fields **never** present in this log line:
+- Raw Authorization header value
+- Cookie header value
+- JWT string
+- Email address
+- Wallet address
+
+---
+
+## Out of scope
+
+- WebSocket transport protocol changes (keep Socket.IO for now)
+- Rate limiting / brute-force protection (separate issue)
+- Refreshing tokens over WebSocket
+
+---
+
+## Test coverage
+
+`src/notifications/gateways/__tests__/gateways.spec.ts` covers:
+
+- Missing token → `TOKEN_MISSING` + disconnect
+- Expired token → `TOKEN_EXPIRED` + disconnect
+- Malformed token → `TOKEN_MALFORMED` + disconnect
+- Invalid signature → `TOKEN_INVALID_SIGNATURE` + disconnect
+- Valid token → no `auth_error`, no disconnect
+- `scrubPii` removes all sensitive keys
+- `emitWsAuthFailure` returns a valid UUID and logs without PII
