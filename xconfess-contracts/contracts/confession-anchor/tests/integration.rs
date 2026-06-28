@@ -54,7 +54,7 @@ fn owner_is_set_after_initialize() {
     let (env, client, owner) = setup();
     assert_eq!(
         client.get_owner(),
-        Ok(owner),
+        owner,
         "owner must match the address passed to initialize"
     );
 }
@@ -233,7 +233,7 @@ fn operator_cannot_pause() {
 #[test]
 fn migrate_advances_schema_version_to_2() {
     let (env, client, owner) = setup();
-    let version = client.migrate(&owner).unwrap();
+    let version = client.migrate(&owner);
     assert_eq!(version, 2, "migrate() must return the new schema version");
     assert_eq!(client.schema_version(), 2);
 }
@@ -241,8 +241,8 @@ fn migrate_advances_schema_version_to_2() {
 #[test]
 fn migrate_is_idempotent() {
     let (env, client, owner) = setup();
-    client.migrate(&owner).unwrap();
-    let version = client.migrate(&owner).unwrap();
+    client.migrate(&owner);
+    let version = client.migrate(&owner);
     assert_eq!(
         version, 2,
         "second migrate() call must be a no-op returning current version"
@@ -252,7 +252,7 @@ fn migrate_is_idempotent() {
 #[test]
 fn last_anchor_timestamp_updates_after_migration() {
     let (env, client, owner) = setup();
-    client.migrate(&owner).unwrap();
+    client.migrate(&owner);
 
     let h = hash(&env, 40);
     let ts: u64 = 9_999_999;
