@@ -191,15 +191,19 @@ fn unpause_without_prior_pause_is_rejected() {
 #[test]
 fn owner_can_grant_and_revoke_admin() {
     let (env, client, owner) = setup();
-    let admin = Address::generate(&env);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
 
-    client.grant_admin(&owner, &admin);
-    assert!(client.is_admin(&admin));
+    client.grant_admin(&owner, &admin1);
+    client.grant_admin(&owner, &admin2);
+    assert!(client.is_admin(&admin1));
+    assert!(client.is_admin(&admin2));
+    assert_eq!(client.get_admin_count(), 2);
+
+    // The contract prevents revoking the last admin to avoid zero authorized addresses.
+    client.revoke_admin(&owner, &admin1);
+    assert!(!client.is_admin(&admin1));
     assert_eq!(client.get_admin_count(), 1);
-
-    client.revoke_admin(&owner, &admin);
-    assert!(!client.is_admin(&admin));
-    assert_eq!(client.get_admin_count(), 0);
 }
 
 #[test]
