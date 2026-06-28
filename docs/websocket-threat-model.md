@@ -28,6 +28,45 @@
   fanout scoped to `confession:<id>`, cap per-IP connections, and apply
   per-socket rate limiting.
 
+## Auth Failure Telemetry
+
+All WebSocket authentication failures in `WsJwtGuard` emit a structured log entry
+with the following fields, free of PII (no JWTs, emails, wallet addresses, or
+cookies):
+
+- `event`: always `WS_AUTH_FAILURE`
+- `reasonCode`: a machine-readable token for programmatic alerting
+- `correlationId`: a `crypto.randomUUID()` v4 UUID to correlate the log with the
+  `UnauthorizedException` response returned to the client
+- `socketId`: the Socket.IO transport identifier (not a user identifier)
+- `error`: the `JwtService` error message (e.g. `jwt expired`, `jwt malformed`)
+
+### Reason Codes
+
+| Code | Meaning |
+|------|---------|
+| `NO_TOKEN_PROVIDED` | Handshake contained no token in auth, Bearer header, or cookie |
+| `EXPIRED_TOKEN` | Token passed `verifyAsync` but the `exp` claim is in the past |
+| `MALFORMED_TOKEN` | Token failed `verifyAsync` for reasons other than expiry |
+| `MISSING_SUBJECT` | Token was cryptographically valid but had no `sub` claim |
+| `USER_MAPPING_FAILED` | JWT was valid but the user lookup in the database failed |
+
+### PII Scrubbing
+
+After `WsJwtGuard.extractToken()` reads a value from an `Authorization` header or
+a `cookie` header, the raw value is replaced with `<REDACTED>` in the handshake
+object so that downstream middleware or error serializers never log the secret.
+
+Clients receive the correlation ID and reason code in the HTTP 401 response body:
+
+```json
+{
+  "message": "Authentication failed",
+  "reasonCode": "EXPIRED_TOKEN",
+  "correlationId": "a1b2c3d4-..."
+}
+```
+
 ## Validation Notes
 
 - Unit coverage lives in

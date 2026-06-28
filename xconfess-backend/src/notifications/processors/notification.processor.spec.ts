@@ -30,6 +30,19 @@ describe('NotificationProcessor', () => {
     );
   });
 
+  it('processes jobs without HTTP request context (no req, no middleware)', async () => {
+    const job = {
+      name: 'send-notification',
+      id: 'job-nohttp',
+      attemptsMade: 0,
+      data: { userId: 'user-1', type: 'test', title: 'Title', message: 'Message' },
+      opts: {},
+    } as unknown as Job<NotificationJobData>;
+
+    await expect(processor.process(job)).resolves.not.toThrow();
+    expect(emailNotificationService.sendEmail).toHaveBeenCalledWith(job.data);
+  });
+
   it('should process notification jobs and emit processing metrics', async () => {
     const job = {
       name: 'send-notification',

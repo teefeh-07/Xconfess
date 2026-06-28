@@ -168,6 +168,25 @@ describe('StellarReconciliationWorker', () => {
     expect(contractService.anchorConfession).not.toHaveBeenCalled();
   });
 
+  it('executes without HTTP request context (no req, no middleware)', async () => {
+    const oldDate = new Date(Date.now() - 10 * 60 * 1000);
+    const anchor = {
+      id: 'a5',
+      status: AnchorStatus.PENDING,
+      retryCount: 1,
+      lastRetryAt: new Date(Date.now() - 3 * 60 * 1000),
+      createdAt: oldDate,
+      confessionId: 'c5',
+    } as StellarAnchor;
+
+    anchorRepository.find.mockResolvedValue([anchor]);
+    confessionRepository.findOne.mockResolvedValue({ id: 'c5', message: 'enc' } as AnonymousConfession);
+    contractService.anchorConfession.mockResolvedValue({ hash: 'txhash456' });
+
+    await expect(worker.reconcilePendingAnchors()).resolves.not.toThrow();
+    expect(anchor.status).toBe(AnchorStatus.ANCHORED);
+  });
+
   it('Test 4: Audit log payload', async () => {
     const anchor = {
       id: 'a4',
