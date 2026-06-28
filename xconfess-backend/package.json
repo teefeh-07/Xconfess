@@ -79,7 +79,9 @@
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.22",
     "uuid": "^9.0.1",
-    "xss": "^1.0.15"
+    "xss": "^1.0.15",
+    "speakeasy": "^2.0.0",
+    "qrcode": "^1.5.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

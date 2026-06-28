@@ -21,7 +21,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-[var(--border)] bg-[color:rgba(243,239,232,0.85)] dark:bg-[color:rgba(18,24,33,0.85)] backdrop-blur-xl pb-[calc(env(safe-area-inset-bottom)+0.25rem)] pt-2 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
+    <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-[var(--border)] bg-[color:rgba(243,239,232,0.85)] dark:bg-[color:rgba(18,24,33,0.85)] backdrop-blur-xl pb-[calc(env(safe-area-inset-bottom)+0.25rem)] pt-2 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
       <div className="flex justify-around items-center max-w-md mx-auto px-4">
         {navItems.map((item) => {
           const Icon = item.icon;

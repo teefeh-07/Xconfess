@@ -130,6 +130,8 @@ export const ConfessionCard = memo(({ confession }: Props) => {
       )}
 
       <article
+        tabIndex={0}
+        data-shortcut-confession={confession.id}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

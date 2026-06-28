@@ -61,7 +61,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const normalized = (error.details as any)?.normalized as NormalizedAuthError | undefined;
     
     if (normalized?.type === "TERMINAL") {
-      // Clear auth state immediately
       setStoreUser(null);
       storeLogout();
       setState({
@@ -69,12 +68,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isAuthenticated: false,
         isLoading: false,
         error: null,
+        isSessionExpired: true,
       });
-
-      // Redirect to login only if not already there
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        router.push('/login');
-      }
     }
   }, [setStoreUser, storeLogout, router]);
 

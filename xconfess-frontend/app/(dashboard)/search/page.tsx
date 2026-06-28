@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, Filter, Calendar, TrendingUp } from "lucide-react";
 import { useDebounce } from "@/lib/hooks/useDebounce";
+import { SearchResultsSkeleton } from "@/app/components/confession/LoadingSkeleton";
 
 interface Confession {
   id: string;
@@ -209,9 +210,7 @@ export default function SearchPage() {
         </div>
       )}
 
-      {loading && (
-        <div className="text-center py-8 text-gray-500">Searching...</div>
-      )}
+      {loading && <SearchResultsSkeleton count={4} />}
 
       {!loading && query && results.length === 0 && (
         <div className="text-center py-12">

@@ -108,7 +108,18 @@ export interface ReportStats {
   resolvedTodayCount: number;
 }
 
+export interface SystemHealthResponse {
+  status: 'ok' | 'error';
+  details?: Record<string, { status: string; [key: string]: any }>;
+  error?: string;
+}
+
 export const adminApi = {
+  getSystemHealth: async (): Promise<SystemHealthResponse> => {
+    const response = await apiClient.get('/api/health/ready');
+    return response.data;
+  },
+
   // Reports
   getReports: async (params?: {
     status?: string;

@@ -51,9 +51,10 @@ export default new DataSource({
   entities: [__dirname + '/src/**/*.entity.{ts,js}'],
   migrations: [__dirname + '/migrations/[0-9]*{.ts,.js}'],
   extra: {
-    max: 20,
-    min: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    // Allow tuning via env with sensible defaults for small clusters
+    max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+    min: parseInt(process.env.DB_POOL_MIN || '5', 10),
+    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || '30000', 10),
+    connectionTimeoutMillis: parseInt(process.env.DB_CONN_TIMEOUT_MS || '2000', 10),
   },
 });

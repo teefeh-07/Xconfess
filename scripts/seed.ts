@@ -35,6 +35,10 @@ const dbName = process.env.DB_NAME || "xconfess";
 const stellarFeaturesEnabled = process.env.STELLAR_FEATURES_ENABLED === "true";
 
 const SEED_USER_PREFIX = "seed_";
+const TARGET_CONFESSIONS = parseInt(process.env.SEED_CONFESSIONS || "20", 10);
+const REACTIONS_COUNT = parseInt(process.env.SEED_REACTIONS || "50", 10);
+const COMMENTS_COUNT = parseInt(process.env.SEED_COMMENTS || "20", 10);
+const REPORTS_COUNT = parseInt(process.env.SEED_REPORTS || "3", 10);
 
 async function seed() {
   const dataSource = new DataSource({
@@ -176,39 +180,45 @@ async function seed() {
       ]},
     ];
 
-    const confessionIds: string[] = [];
-    for (const cat of confessionCategories) {
-      for (const msg of cat.messages) {
-        const confessionId = crypto.randomUUID();
-        const idempotencyKey = `seed_confession_${confessionId.substring(0, 8)}`;
-        const stellarTxHash = stellarFeaturesEnabled
-          ? `seed_stellar_tx_${confessionId.substring(0, 8)}`
-          : null;
+    // Flatten messages for random sampling when generating many confessions
+    const allMessages = confessionCategories.flatMap((c) => c.messages);
 
-        await manager.query(
-          `INSERT INTO "anonymous_confessions"
-           (id, message, gender, "anonymous_user_id", view_count, "isDeleted", "moderation_score", "moderation_status", "requires_review", "is_hidden", "moderation_flags", idempotency_key, "stellar_tx_hash", "stellar_hash", "is_anchored", created_at)
-           VALUES ($1, $2, $3, $4, $5, false, 0, 'clean', false, false, '', $6, $7, $8, $9, NOW())`,
-          [
-            confessionId,
-            msg,
-            ["male", "female", "other"][Math.floor(Math.random() * 3)],
-            anonUserIds[Math.floor(Math.random() * anonUserIds.length)],
-            Math.floor(Math.random() * 100),
-            idempotencyKey,
-            stellarTxHash,
-            stellarTxHash ? `hash_${confessionId.substring(0, 8)}` : null,
-            stellarFeaturesEnabled,
-          ],
-        );
-        confessionIds.push(confessionId);
+    const confessionIds: string[] = [];
+    for (let i = 0; i < TARGET_CONFESSIONS; i++) {
+      const confessionId = crypto.randomUUID();
+      const idempotencyKey = `seed_confession_${confessionId.substring(0, 8)}`;
+      const stellarTxHash = stellarFeaturesEnabled
+        ? `seed_stellar_tx_${confessionId.substring(0, 8)}`
+        : null;
+
+      const msg = allMessages[Math.floor(Math.random() * allMessages.length)];
+
+      await manager.query(
+        `INSERT INTO "anonymous_confessions"
+         (id, message, gender, "anonymous_user_id", view_count, "isDeleted", "moderation_score", "moderation_status", "requires_review", "is_hidden", "moderation_flags", idempotency_key, "stellar_tx_hash", "stellar_hash", "is_anchored", created_at)
+         VALUES ($1, $2, $3, $4, $5, false, 0, 'clean', false, false, '', $6, $7, $8, $9, NOW())`,
+        [
+          confessionId,
+          msg,
+          ["male", "female", "other"][Math.floor(Math.random() * 3)],
+          anonUserIds[Math.floor(Math.random() * anonUserIds.length)],
+          Math.floor(Math.random() * 100),
+          idempotencyKey,
+          stellarTxHash,
+          stellarTxHash ? `hash_${confessionId.substring(0, 8)}` : null,
+          stellarFeaturesEnabled,
+        ],
+      );
+      confessionIds.push(confessionId);
+      if ((i + 1) % 1000 === 0) {
+        console.log(`Inserted ${i + 1} confessions...`);
       }
     }
     console.log(`Created ${confessionIds.length} confessions.`);
 
     // ── 5. Create Reactions ────────────────────────────────────────────────
     const emojis = ["❤️", "😂", "😢", "🔥", "👍", "👏", "🤔", "💯"];
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < REACTIONS_COUNT; i++) {
       const reactionId = crypto.randomUUID();
       const confessionId = confessionIds[i % confessionIds.length];
       await manager.query(
@@ -248,7 +258,7 @@ async function seed() {
       "Sending good vibes your way.",
     ];
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < COMMENTS_COUNT; i++) {
       const confessionId = confessionIds[i % confessionIds.length];
       await manager.query(
         `INSERT INTO "comments" (content, "anonymous_user_id", "confessionId", "createdAt", "isDeleted")
@@ -269,7 +279,7 @@ async function seed() {
       "Inappropriate content for this platform.",
     ];
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < REPORTS_COUNT; i++) {
       const reportId = crypto.randomUUID();
       const confessionId = confessionIds[i * 5];
       const reportTypes = ["spam", "harassment", "inappropriate_content"];

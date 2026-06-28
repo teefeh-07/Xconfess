@@ -200,10 +200,24 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
+const noopToast: NonNullable<ToastContextType> = {
+  toasts: [],
+  addToast: () => '',
+  removeToast: () => {},
+  success: () => '',
+  error: () => '',
+  warning: () => '',
+  info: () => '',
+};
+
 export const useGlobalToast = () => {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error('useGlobalToast must be used within ToastProvider');
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.warn('useGlobalToast called outside ToastProvider; toast calls will be no-ops.');
+    }
+    return noopToast;
   }
   return context;
 };

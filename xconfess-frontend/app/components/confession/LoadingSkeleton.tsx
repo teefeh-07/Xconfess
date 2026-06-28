@@ -95,3 +95,85 @@ export function ConfessionDetailSkeleton() {
     </div>
   );
 }
+
+export function SearchResultsSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div
+      className="space-y-4"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading search results"
+    >
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={`search-skeleton-${index}`}
+          className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4"
+        >
+          <div className="space-y-2 mb-3">
+            <div className="h-4 w-full animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+            <div className="h-4 w-5/6 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="h-3 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+            <div className="h-3 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+            <div className="h-3 w-16 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProfilePageSkeleton() {
+  return (
+    <div
+      className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading profile"
+    >
+      <div className="h-32 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-800" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-28 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-800"
+          />
+        ))}
+      </div>
+      <div className="h-96 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-800" />
+    </div>
+  );
+}
+
+export function AdminDashboardSkeleton() {
+  return (
+    <div
+      className="space-y-6"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading admin dashboard"
+    >
+      <div className="space-y-2">
+        <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+        <div className="h-4 w-72 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900"
+          />
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-64 animate-pulse rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
