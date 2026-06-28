@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  Unique,
 } from 'typeorm';
 import { AnonymousConfession } from '../../confession/entities/confession.entity';
 
@@ -18,6 +19,8 @@ export enum TipVerificationStatus {
 }
 
 @Entity('tips')
+@Unique('UQ_tip_idempotency_key', ['idempotencyKey'])
+@Index('IDX_tip_confession_tx', ['confessionId', 'txId'], { unique: true })
 export class Tip {
   @PrimaryGeneratedColumn('uuid')
   id: string;

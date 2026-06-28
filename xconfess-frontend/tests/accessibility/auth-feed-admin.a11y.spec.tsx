@@ -45,11 +45,16 @@ jest.mock("@/app/lib/hooks/useReactions", () => ({
   useReactions: () => ({
     addReaction: mockAddReaction,
     isPending: false,
+    optimisticState: null,
+    liveCounts: {},
+    connectionState: "closed",
   }),
 }));
 
 jest.mock("@/app/lib/utils/errorHandler", () => ({
   logError: jest.fn(),
+  getErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : String(error),
 }));
 
 jest.mock("@/app/lib/api/client", () => ({
@@ -76,6 +81,8 @@ jest.mock("lucide-react", () => {
     X: icon("x"),
     Home: icon("home"),
     Search: icon("search"),
+    PlusCircle: icon("plus-circle"),
+    Bell: icon("bell"),
     User: icon("user"),
     MessageSquare: icon("message-square"),
     Heart: icon("heart"),
@@ -182,26 +189,23 @@ describe("Header accessibility", () => {
     expect(feedLink.className).toContain("focus-visible:outline");
   });
 
-  it("mobile menu button has aria-expanded and aria-controls", () => {
+  it("top and mobile navigation landmarks have distinct labels", () => {
     render(<Header />);
-    const menuButton = screen.getByRole("button", { name: /open menu/i });
-    expect(menuButton).toHaveAttribute("aria-expanded", "false");
-    expect(menuButton).toHaveAttribute("aria-controls", "mobile-navigation");
+    const navs = screen.getAllByRole("navigation");
+    const labels = navs.map((nav) => nav.getAttribute("aria-label"));
+    expect(labels).toContain("Primary navigation");
+    expect(labels).toContain("Mobile navigation");
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("Escape key closes the mobile menu and returns focus to the trigger", async () => {
-    const user = userEvent.setup();
+  it("bottom nav exposes notification and profile links", () => {
     render(<Header />);
-
-    const menuButton = screen.getByRole("button", { name: /open menu/i });
-    await user.click(menuButton);
-
-    expect(screen.getByTestId("sidebar")).toBeInTheDocument();
-
-    fireEvent.keyDown(screen.getByRole("banner"), { key: "Escape" });
-
-    expect(screen.queryByTestId("sidebar")).not.toBeInTheDocument();
-    expect(document.activeElement).toBe(menuButton);
+    expect(
+      screen.getByRole("link", { name: /Notifications/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: /Profile/i }).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("logout button is keyboard accessible", async () => {
@@ -269,10 +273,7 @@ describe("ReactionButton accessibility", () => {
     button.focus();
     await user.keyboard("{Enter}");
 
-    expect(mockAddReaction).toHaveBeenCalledWith({
-      confessionId: "c-1",
-      type: "like",
-    });
+    expect(mockAddReaction).toHaveBeenCalledWith("c-1", "like");
   });
 
   it("can be triggered with Space key", async () => {
@@ -483,10 +484,10 @@ describe("Login page accessibility", () => {
   it("all form controls are labelled", () => {
     render(<LoginPage />);
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
   });
 
-  it("Tab moves through inputs then buttons in order", async () => {
+  it("Tab moves through inputs then reaches the sign-in button", async () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
@@ -496,7 +497,16 @@ describe("Login page accessibility", () => {
     await user.tab();
     expect(document.activeElement?.tagName).toBe("INPUT");
 
-    await user.tab();
+    // Tab through any additional inputs or intermediate links (e.g. forgot password).
+    let steps = 0;
+    while (
+      document.activeElement?.tagName !== "BUTTON" &&
+      steps < 10
+    ) {
+      await user.tab();
+      steps++;
+    }
+
     expect(document.activeElement?.tagName).toBe("BUTTON");
   });
 
@@ -544,7 +554,7 @@ describe("Register page accessibility", () => {
     render(<RegisterPage />);
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
   });
 
   it("Tab reaches the sign-in link", async () => {

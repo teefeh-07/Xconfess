@@ -79,6 +79,31 @@ export class User {
   })
   privacySettings!: PrivacySettings;
 
+  // Two-factor authentication (TOTP) fields
+  @Column({ name: 'totp_enabled', default: false })
+  totpEnabled!: boolean;
+
+  @Column({ name: 'totp_secret_encrypted', type: 'text', nullable: true })
+  totpSecretEncrypted!: string | null;
+
+  @Column({ name: 'totp_secret_iv', type: 'varchar', length: 64, nullable: true })
+  totpSecretIv!: string | null;
+
+  @Column({ name: 'totp_secret_tag', type: 'varchar', length: 64, nullable: true })
+  totpSecretTag!: string | null;
+
+  /**
+   * Recovery codes (one-time use). Stored as encrypted JSON array of codes.
+   */
+  @Column({ name: 'recovery_codes_encrypted', type: 'text', nullable: true })
+  recoveryCodesEncrypted!: string | null;
+
+  @Column({ name: 'recovery_codes_iv', type: 'varchar', length: 64, nullable: true })
+  recoveryCodesIv!: string | null;
+
+  @Column({ name: 'recovery_codes_tag', type: 'varchar', length: 64, nullable: true })
+  recoveryCodesTag!: string | null;
+
   isNotificationEnabled(category: NotificationCategory): boolean {
     if (!this.notificationPreferences) return true;
 

@@ -6,9 +6,17 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, TokenExpiredError } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
 import { UserService } from '../../user/user.service';
+import { randomUUID } from 'crypto';
+
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-auth-token',
+]);
 
 @Injectable()
 export class WsJwtGuard implements CanActivate {
@@ -21,30 +29,33 @@ export class WsJwtGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const client: Socket = context.switchToWs().getClient<Socket>();
+    const correlationId = this.generateCorrelationId();
 
     const token = this.extractToken(client);
     if (!token) {
+      const reasonCode = 'NO_TOKEN_PROVIDED';
       this.logger.warn({
         event: 'WS_AUTH_FAILURE',
-        reason: 'NO_TOKEN_PROVIDED',
+        reasonCode,
         socketId: client.id,
+        correlationId,
         msg: 'No authentication token provided on socket handshake',
       });
-      throw new UnauthorizedException('No authentication token provided');
+      throw this.buildAuthException(reasonCode, correlationId);
     }
 
     try {
       const payload: any = await this.jwtService.verifyAsync(token);
       if (!payload?.sub) {
+        const reasonCode = 'MISSING_SUBJECT';
         this.logger.warn({
           event: 'WS_AUTH_FAILURE',
-          reason: 'MISSING_SUBJECT',
+          reasonCode,
           socketId: client.id,
+          correlationId,
           msg: 'Verified WS token did not contain a subject',
         });
-        throw new UnauthorizedException(
-          'Invalid or expired authentication token',
-        );
+        throw this.buildAuthException(reasonCode, correlationId);
       }
 
       // Attach useful user info to the socket for downstream handlers
@@ -71,39 +82,59 @@ export class WsJwtGuard implements CanActivate {
         // non-fatal: log and continue with minimal payload
         this.logger.warn({
           event: 'WS_AUTH_USER_FETCH_ERROR',
-          reason: 'USER_MAPPING_FAILED',
+          reasonCode: 'USER_MAPPING_FAILED',
           socketId: client.id,
           userId: payload.sub,
+          correlationId,
           msg: `Failed to fetch user for WS auth: ${err instanceof Error ? err.message : err}`,
         });
       }
 
       return true;
     } catch (err) {
+      const reasonCode =
+        err instanceof TokenExpiredError ? 'EXPIRED_TOKEN' : 'MALFORMED_TOKEN';
       this.logger.warn({
         event: 'WS_AUTH_FAILURE',
-        reason: 'INVALID_TOKEN',
+        reasonCode,
         socketId: client.id,
+        correlationId,
         error: err instanceof Error ? err.message : String(err),
-        msg: 'Invalid or expired WS token',
+        msg: `WebSocket auth failed: ${reasonCode}`,
       });
-      throw new UnauthorizedException(
-        'Invalid or expired authentication token',
-      );
+      throw this.buildAuthException(reasonCode, correlationId);
     }
+  }
+
+  private generateCorrelationId(): string {
+    return randomUUID();
+  }
+
+  private buildAuthException(
+    reasonCode: string,
+    correlationId: string,
+  ): UnauthorizedException {
+    return new UnauthorizedException({
+      message: 'Authentication failed',
+      reasonCode,
+      correlationId,
+    });
   }
 
   private extractToken(client: Socket): string | null {
     // 1) Prefer handshake.auth.token (socket.io client can send via auth)
     const auth = client.handshake?.auth as any;
     if (auth && typeof auth.token === 'string' && auth.token.trim()) {
+      this.scrubSensitiveHeaders(client);
       return auth.token.trim();
     }
 
     // 2) Authorization header (Bearer token)
     const authHeader = client.handshake?.headers?.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice('Bearer '.length).trim();
+      const token = authHeader.slice('Bearer '.length).trim();
+      this.scrubSensitiveHeaders(client);
+      return token;
     }
 
     // 3) Cookies: look for common cookie names like 'token' or 'jwt' or 'access_token'
@@ -116,12 +147,28 @@ export class WsJwtGuard implements CanActivate {
         if (!key || !value) continue;
         const k = key.trim();
         if (['token', 'jwt', 'access_token'].includes(k)) {
+          this.scrubSensitiveHeaders(client);
           return decodeURIComponent(value.trim());
         }
       }
     }
 
     return null;
+  }
+
+  /**
+   * Replace known sensitive header values with a placeholder so
+   * downstream middleware, serializers, and loggers never see the
+   * raw credential material.
+   */
+  private scrubSensitiveHeaders(client: Socket): void {
+    const headers = client.handshake?.headers as Record<string, string> | undefined;
+    if (!headers) return;
+    for (const name of SENSITIVE_HEADERS) {
+      if (headers[name]) {
+        headers[name] = '<REDACTED>';
+      }
+    }
   }
 }
 

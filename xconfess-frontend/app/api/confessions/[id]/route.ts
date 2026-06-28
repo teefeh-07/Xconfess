@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from "@/app/lib/config";
 import { createApiErrorResponse } from "@/lib/apiErrorHandler";
+import { getOrCreateRequestId, requestIdResponseHeaders } from "@/app/lib/utils/requestId";
 
 const BASE_API_URL = getApiBaseUrl();
 
@@ -9,14 +10,15 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+    const requestId = getOrCreateRequestId(_request);
     if (!id) {
-      return createApiErrorResponse("Confession ID is required", { status: 400 });
+      return createApiErrorResponse("Confession ID is required", { status: 400, correlationId: requestId });
     }
 
     const url = `${BASE_API_URL}/confessions/${id}`;
     const response = await fetch(url, {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-request-id": requestId },
       next: { revalidate: 30 },
     });
 
@@ -112,6 +114,7 @@ export async function GET(
       const err = await response.json().catch(() => ({}));
       return createApiErrorResponse(err, {
         status: response.status,
+          upstreamResponse: response,
         fallbackMessage: "Failed to fetch confession",
         route: "GET /api/confessions/[id]"
       });

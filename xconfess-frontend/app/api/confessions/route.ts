@@ -1,10 +1,11 @@
 import { normalizeConfession } from "../../lib/utils/normalizeConfession";
 import { createApiErrorResponse } from "@/lib/apiErrorHandler";
 import { getApiBaseUrl } from "@/app/lib/config";
+import { getOrCreateRequestId, requestIdResponseHeaders } from "@/app/lib/utils/requestId";
 
 const BASE_API_URL = getApiBaseUrl();
 export async function POST(request: Request) {
-  const correlationId = request.headers.get("X-Correlation-ID") || "unknown";
+  const correlationId = getOrCreateRequestId(request);
 
   try {
     const body = await request.json();
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Correlation-ID": correlationId,
+          "x-request-id": correlationId,
         },
         body: JSON.stringify(backendBody),
       });
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
         const errorData = await response.json().catch(() => ({}));
         return createApiErrorResponse(errorData, {
           status: response.status,
+          upstreamResponse: response,
           correlationId,
           fallbackMessage: `Failed to create confession: ${response.statusText}`,
           route: "POST /api/confessions"
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
 
       return new Response(JSON.stringify(normalized), {
         status: 201,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...requestIdResponseHeaders(correlationId) },
       });
     } catch (fetchError) {
       return createApiErrorResponse(fetchError, {
@@ -90,7 +92,7 @@ export async function GET(request: Request) {
     backendParams.append("gender", gender);
   }
 
-  const correlationId = request.headers.get("X-Correlation-ID") || "unknown";
+  const correlationId = getOrCreateRequestId(request);
 
   try {
     const backendUrl = `${BASE_API_URL}/confessions?${backendParams}`;
@@ -99,7 +101,7 @@ export async function GET(request: Request) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
+        "x-request-id": correlationId,
       },
       next: {
         revalidate: 30, // Cache for 30 seconds
@@ -109,6 +111,7 @@ export async function GET(request: Request) {
     if (!response.ok) {
       return createApiErrorResponse(undefined, {
         status: response.status,
+          upstreamResponse: response,
         correlationId,
         fallbackMessage: `Failed to fetch confessions: ${response.statusText}`,
         route: "GET /api/confessions"
@@ -139,7 +142,7 @@ export async function GET(request: Request) {
       }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...requestIdResponseHeaders(correlationId) },
       },
     );
   } catch (error) {

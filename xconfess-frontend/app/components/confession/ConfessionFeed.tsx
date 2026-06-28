@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ConfessionCard } from "./ConfessionCard";
 import { ConfessionFeedSkeleton } from "./LoadingSkeleton";
 import { useConfessionsQuery } from "../../lib/hooks/useConfessionsQuery";
@@ -15,6 +17,8 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 
+const ESTIMATED_CARD_HEIGHT = 300;
+
 export const ConfessionFeed = () => {
   const { page, setPage, limit } = usePaginationState();
 
@@ -23,6 +27,44 @@ export const ConfessionFeed = () => {
     limit,
   });
 
+  const [pullStart, setPullStart] = useState<number | null>(null);
+  const [pullChange, setPullChange] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (typeof window !== "undefined" && window.scrollY === 0 && !refreshing) {
+      setPullStart(e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (pullStart === null || refreshing) return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - pullStart;
+    if (diff > 0) {
+      setPullChange(Math.min(diff * 0.5, 80));
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (pullStart === null || refreshing) return;
+    setPullStart(null);
+    if (pullChange >= 60) {
+      setRefreshing(true);
+      setPullChange(60);
+      try {
+        await refetch();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRefreshing(false);
+        setPullChange(0);
+      }
+    } else {
+      setPullChange(0);
+    }
+  };
+
   const confessions = data?.confessions ?? [];
   const totalPages = data?.total
     ? Math.ceil(data.total / limit)
@@ -30,6 +72,15 @@ export const ConfessionFeed = () => {
       ? page + 1
       : page;
   const isEmpty = !isLoading && confessions.length === 0;
+
+  const scrollParentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: confessions.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => ESTIMATED_CARD_HEIGHT,
+    overscan: 3,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
 
   // Retry handler
   const handleRetry = () => {
@@ -93,7 +144,38 @@ export const ConfessionFeed = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl py-2">
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="mx-auto w-full max-w-3xl py-2"
+    >
+      {/* Pull-to-refresh spinner */}
+      {pullChange > 0 && (
+        <div
+          className="flex justify-center items-center transition-all duration-150 ease-out overflow-hidden mb-2"
+          style={{ height: `${pullChange}px` }}
+        >
+          <div
+            className={`transition-transform duration-100 ${refreshing ? "animate-spin" : ""}`}
+            style={{ transform: `rotate(${pullChange * 6}deg)` }}
+          >
+            <svg
+              className="w-6 h-6 text-violet-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
       {/* Reserve vertical space to avoid layout shifts between states */}
       <div className="min-h-[320px] sm:min-h-[420px] md:min-h-[520px]">
         {/* Empty State */}
@@ -138,14 +220,38 @@ export const ConfessionFeed = () => {
         {/* Loading state (skeleton kept inside the reserved space to avoid jumps) */}
         {isLoading && <ConfessionFeedSkeleton />}
 
-        {/* Confessions Grid */}
+        {/* Confessions — virtualised list */}
         {!isEmpty && confessions.length > 0 && (
           <div
-            className={`space-y-5 transition-opacity duration-200 ${isFetching && !isLoading ? "opacity-50" : "opacity-100"}`}
+            ref={scrollParentRef}
+            className={`overflow-y-auto transition-opacity duration-200 ${isFetching && !isLoading ? "opacity-50" : "opacity-100"}`}
+            style={{ height: "calc(100vh - 320px)", minHeight: 400 }}
+            data-testid="virtual-scroll-container"
           >
-            {confessions.map((confession) => (
-              <ConfessionCard key={confession.id} confession={confession} />
-            ))}
+            <div
+              style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+            >
+              {virtualItems.map((virtualRow) => {
+                const confession = confessions[virtualRow.index];
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                      paddingBottom: "1.25rem",
+                    }}
+                  >
+                    <ConfessionCard confession={confession} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

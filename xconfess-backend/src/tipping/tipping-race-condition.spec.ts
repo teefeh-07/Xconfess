@@ -117,11 +117,25 @@ describe('TippingService - Race Condition Prevention', () => {
         id: 'tip-1',
         txId,
         confessionId: confession1Id,
+        idempotencyKey: service['generateIdempotencyKey'](confession1Id, txId),
         verificationStatus: TipVerificationStatus.VERIFIED,
       };
 
+      const expectedIdempotencyKey = service['generateIdempotencyKey'](
+        confession2Id,
+        txId,
+      );
+
       jest.spyOn(confessionRepository, 'findOne').mockResolvedValue(mockConfession as any);
-      jest.spyOn(tipRepository, 'findOne').mockResolvedValue(existingTip as any);
+      jest.spyOn(tipRepository, 'findOne').mockImplementation((options: any) => {
+        if (options?.where?.idempotencyKey === expectedIdempotencyKey) {
+          return null;
+        }
+        if (options?.where?.txId === txId) {
+          return existingTip as any;
+        }
+        return null;
+      });
 
       await expect(
         service.verifyAndRecordTip(confession2Id, dto),

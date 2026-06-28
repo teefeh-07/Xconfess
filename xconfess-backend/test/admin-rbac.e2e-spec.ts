@@ -92,7 +92,7 @@ describe('Admin RBAC Integration Tests (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api/v1', { exclude: ['api/health', 'api/health/live', 'api/health/ready'] });
     await app.init();
   });
 
@@ -102,13 +102,13 @@ describe('Admin RBAC Integration Tests (e2e)', () => {
 
   it('rejects unauthenticated requests with 401', async () => {
     await request(app.getHttpServer())
-      .get('/api/admin/moderation/stats')
+      .get('/api/v1/admin/moderation/stats')
       .expect(401);
   });
 
   it('rejects authenticated non-admin users with 403', async () => {
     await request(app.getHttpServer())
-      .get('/api/admin/moderation/stats')
+      .get('/api/v1/admin/moderation/stats')
       .set('Authorization', 'Bearer user-token')
       .expect(403)
       .expect(({ body }) => {
@@ -118,7 +118,7 @@ describe('Admin RBAC Integration Tests (e2e)', () => {
 
   it('allows admins to fetch moderation stats', async () => {
     await request(app.getHttpServer())
-      .get('/api/admin/moderation/stats')
+      .get('/api/v1/admin/moderation/stats')
       .set('Authorization', 'Bearer admin-token')
       .expect(200)
       .expect(({ body }) => {
@@ -134,7 +134,7 @@ describe('Admin RBAC Integration Tests (e2e)', () => {
 
   it('protects pending moderation reviews behind admin RBAC', async () => {
     await request(app.getHttpServer())
-      .get('/api/admin/moderation/pending?limit=10&offset=5')
+      .get('/api/v1/admin/moderation/pending?limit=10&offset=5')
       .set('Authorization', 'Bearer admin-token')
       .expect(200)
       .expect(({ body }) => {
@@ -152,7 +152,7 @@ describe('Admin RBAC Integration Tests (e2e)', () => {
 
   it('allows admins to review moderation items', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/moderation/review/log-1')
+      .post('/api/v1/admin/moderation/review/log-1')
       .set('Authorization', 'Bearer admin-token')
       .send({
         status: ModerationStatus.APPROVED,

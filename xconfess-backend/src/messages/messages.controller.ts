@@ -7,6 +7,9 @@ import {
   Query,
   UsePipes,
   ValidationPipe,
+  Put,
+  Param,
+  ParseUUIDPipe,
   BadRequestException,
 } from '@nestjs/common';
 import {
@@ -17,9 +20,11 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { MessagesService } from './messages.service';
+import { MessageKeysService } from './message-keys.service';
 import { CreateMessageDto, ReplyMessageDto } from './dto/message.dto';
 import { GetMessagesQueryDto } from './dto/get-messages-query.dto';
-import { encodeCursor, CursorPaginatedResponseDto } from '../common/pagination';
+import { RegisterMessageKeyDto } from './dto/message-key.dto';
+import { CursorPaginatedResponseDto } from '../common/pagination';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../auth/get-user.decorator';
 import { User } from '../user/entities/user.entity';
@@ -28,7 +33,10 @@ import { User } from '../user/entities/user.entity';
 @ApiBearerAuth()
 @Controller('messages')
 export class MessagesController {
-  constructor(private readonly messagesService: MessagesService) {}
+  constructor(
+    private readonly messagesService: MessagesService,
+    private readonly messageKeysService: MessageKeysService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -38,7 +46,6 @@ export class MessagesController {
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async sendMessage(@Body() dto: CreateMessageDto, @GetUser() user: User) {
     const message = await this.messagesService.create(dto, user);
-    // Confessions are anonymous; no email notification is sent here.
     return { success: true, messageId: message.id };
   }
 
@@ -98,10 +105,10 @@ export class MessagesController {
       query,
     );
 
-    // Hide sender info for anonymity
     const transformedData = result.data.map((m) => ({
       id: m.id,
       content: m.content,
+      isEncrypted: m.isEncrypted,
       createdAt: m.createdAt,
       hasReply: m.hasReply,
       replyContent: m.replyContent,
@@ -114,5 +121,38 @@ export class MessagesController {
       result.hasMore,
       query.limit || 20,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('keys')
+  @ApiOperation({ summary: 'Register E2E public key for current anonymous session' })
+  async registerKey(
+    @Body() dto: RegisterMessageKeyDto,
+    @GetUser() user: User,
+  ) {
+    return this.messageKeysService.registerForSession(user, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('keys/me')
+  @ApiOperation({ summary: 'Get E2E key status for current anonymous session' })
+  async getMyKey(@GetUser() user: User) {
+    return this.messageKeysService.getMySessionKey(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('keys/backup')
+  @ApiOperation({ summary: 'Download passphrase-wrapped private key backup' })
+  async getKeyBackup(@GetUser() user: User) {
+    return this.messageKeysService.getKeyBackup(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('keys/:anonymousUserId')
+  @ApiOperation({ summary: 'Fetch E2E public key for a thread participant' })
+  async getParticipantKey(
+    @Param('anonymousUserId', ParseUUIDPipe) anonymousUserId: string,
+  ) {
+    return this.messageKeysService.getPublicKey(anonymousUserId);
   }
 }

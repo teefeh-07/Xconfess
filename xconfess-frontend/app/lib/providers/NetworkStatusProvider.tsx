@@ -15,7 +15,8 @@ const NetworkStatusContext = createContext<NetworkStatusContextType | undefined>
 
 function getApiBaseUrl(): string {
   if (typeof window === "undefined") return "http://localhost:3000";
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+  const url = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+  return url.includes('/api/v1') ? url : url.replace(/\/api\/?$/, '') + '/api/v1';
 }
 
 export const NetworkStatusProvider = ({ children }: { children: React.ReactNode }) => {
@@ -36,7 +37,7 @@ export const NetworkStatusProvider = ({ children }: { children: React.ReactNode 
     if (checkInFlight.current) return isApiOnline;
     checkInFlight.current = true;
     try {
-      const base = getApiBaseUrl().replace(/\/api\/?$/, "");
+      const base = getApiBaseUrl().replace(/\/api\/v1\/?$/, "").replace(/\/api\/?$/, "");
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(`${base}/api/health`, {

@@ -5,6 +5,7 @@ import {
   normalizeAuthError,
   NormalizedAuthError,
 } from "@/lib/normalizeAuthError";
+import { getOrCreateRequestId, requestIdResponseHeaders } from "@/app/lib/utils/requestId";
 
 const API_URL = getApiBaseUrl();
 const SESSION_COOKIE_NAME = "xconfess_session";
@@ -16,7 +17,8 @@ const MAX_RETRIES = 1;
  */
 async function fetchBackendWithRetry(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  requestId?: string
 ): Promise<{
   success: boolean;
   data?: Record<string, unknown>;
@@ -26,12 +28,15 @@ async function fetchBackendWithRetry(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options.headers as Record<string, string>),
+      };
+      if (requestId) headers["x-request-id"] = requestId;
+
       const response = await fetch(url, {
         ...options,
-        headers: {
-          "Content-Type": "application/json",
-          ...options.headers,
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -103,6 +108,7 @@ async function fetchBackendWithRetry(
 }
 
 export async function POST(request: Request) {
+    const requestId = getOrCreateRequestId(request);
     try {
         const body = await request.json();
         const email = typeof body?.email === "string" ? body.email : undefined;
@@ -117,11 +123,10 @@ export async function POST(request: Request) {
             return createErrorResponse(normalized);
         }
 
-        // Fetch with automatic retry for TRANSIENT errors
         const result = await fetchBackendWithRetry(`${API_URL}/auth/login`, {
             method: "POST",
             body: JSON.stringify({ email, password }),
-        });
+        }, requestId);
 
         if (!result.success) {
             return createErrorResponse(result.normalized!);
@@ -140,10 +145,12 @@ export async function POST(request: Request) {
             path: "/",
         });
 
-        return NextResponse.json({
+        const res = NextResponse.json({
             user: data.user,
             anonymousUserId: data.anonymousUserId ?? null,
         });
+        res.headers.set("x-request-id", requestId);
+        return res;
     } catch (error) {
         const normalized = normalizeAuthError(error);
         return createErrorResponse(normalized);

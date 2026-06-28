@@ -3,6 +3,7 @@ import type {
   FailedJobsResponse,
   FailedJobsFilter,
   ReplayJobResponse,
+  BulkReplayResponse,
 } from '../types/notification-jobs';
 
 export interface Report {
@@ -107,7 +108,18 @@ export interface ReportStats {
   resolvedTodayCount: number;
 }
 
+export interface SystemHealthResponse {
+  status: 'ok' | 'error';
+  details?: Record<string, { status: string; [key: string]: any }>;
+  error?: string;
+}
+
 export const adminApi = {
+  getSystemHealth: async (): Promise<SystemHealthResponse> => {
+    const response = await apiClient.get('/api/health/ready');
+    return response.data;
+  },
+
   // Reports
   getReports: async (params?: {
     status?: string;
@@ -259,5 +271,34 @@ export const adminApi = {
       reason,
     });
     return response.data;
+  },
+
+  bulkReplayJobs: async (jobIds: string[]): Promise<BulkReplayResponse> => {
+    const response = await apiClient.post('/api/admin/dlq/replay', { jobIds });
+    return response.data;
+  },
+
+  exportDlqCsv: async (filter?: FailedJobsFilter): Promise<void> => {
+    const params: Record<string, any> = {};
+    if (filter?.startDate) {
+      params.failedAfter = new Date(filter.startDate).toISOString();
+    }
+    if (filter?.endDate) {
+      params.failedBefore = new Date(filter.endDate).toISOString();
+    }
+
+    const response = await apiClient.get('/api/admin/dlq/export-csv', {
+      params,
+      responseType: 'blob',
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `dlq-jobs-${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   },
 };

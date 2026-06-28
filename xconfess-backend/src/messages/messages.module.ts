@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Message } from './entities/message.entity';
 import { MessagesService } from './messages.service';
+import { MessageKeysService } from './message-keys.service';
 import { MessagesController } from './messages.controller';
 import { User } from '../user/entities/user.entity';
 import { AnonymousConfession } from '../confession/entities/confession.entity';
@@ -23,7 +24,7 @@ import { MessageRepository } from './repository/message.repository';
     ]),
     UserModule,
   ],
-  providers: [MessagesService, MessageRepository],
+  providers: [MessagesService, MessageKeysService, MessageRepository],
   controllers: [MessagesController],
   exports: [MessagesService],
 })

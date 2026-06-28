@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { ModerationTemplateService } from '../comment/moderation-template.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StellarDiagnosticsService } from './services/stellar-diagnostics.service';
 
 describe('AdminController', () => {
   let controller: AdminController;

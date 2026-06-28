@@ -661,6 +661,33 @@ export class JobManagementService {
     };
   }
 
+  async exportDlqCsv(filter?: DlqJobFilter): Promise<string> {
+    const jobs = await this.getFilteredDlqJobs(filter);
+    const header = 'Job ID,Original Job ID,Failure Reason,Retry Count,Failed At,Channel,Recipient Email,Created At,Type\n';
+    const rows = jobs.map((job) => {
+      const serialized = this.serializeDlqJob(job);
+      const csvRow = [
+        this.escapeCsvField(serialized.id),
+        this.escapeCsvField(job.data._meta?.originalJobId || ''),
+        this.escapeCsvField(serialized.failedReason || ''),
+        String(serialized.attemptsMade),
+        this.escapeCsvField(serialized.failedAt || ''),
+        this.escapeCsvField(serialized.channel),
+        this.escapeCsvField(serialized.recipientEmail || ''),
+        this.escapeCsvField(serialized.createdAt || ''),
+        this.escapeCsvField(serialized.type || ''),
+      ].join(',');
+      return csvRow;
+    });
+    return header + rows.join('\n');
+  }
+
+  private escapeCsvField(value: string): string {
+    if (!value) return '""';
+    const escaped = value.replace(/"/g, '""');
+    return `"${escaped}"`;
+  }
+
   private emitReplayObservability(
     operationId: string,
     actorId: string,

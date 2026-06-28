@@ -1,4 +1,4 @@
-import {
+﻿import {
   Column,
   CreateDateColumn,
   Entity,
@@ -8,12 +8,13 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
   RelationId,
-} from 'typeorm';
-import { AnonymousConfession } from '../../confession/entities/confession.entity';
-import { AnonymousUser } from '../../user/entities/anonymous-user.entity';
+  UpdateDateColumn,
+} from "typeorm";
+import { AnonymousConfession } from "../../confession/entities/confession.entity";
+import { AnonymousUser } from "../../user/entities/anonymous-user.entity";
 
-@Entity('comments')
-@Index(['confession', 'createdAt', 'id']) // Composite index for stable ordering
+@Entity("comments")
+@Index(["confession", "createdAt", "id"])
 export class Comment {
   @PrimaryGeneratedColumn()
   id: number;
@@ -24,20 +25,23 @@ export class Comment {
   @CreateDateColumn()
   createdAt: Date;
 
+  @UpdateDateColumn()
+  updatedAt: Date;
+
   @ManyToOne(() => AnonymousUser, (anonymousUser) => anonymousUser.comments)
-  @JoinColumn({ name: 'anonymous_user_id' })
+  @JoinColumn({ name: "anonymous_user_id" })
   anonymousUser: AnonymousUser;
 
   @ManyToOne(() => AnonymousConfession, (c) => c.comments)
-  @JoinColumn({ name: 'confessionId' })
+  @JoinColumn({ name: "confessionId" })
   confession: AnonymousConfession;
 
   @Column({ nullable: true })
   anonymousContextId?: string;
 
-  // Parent comment (optional) for nested replies
+  // Parent comment (optional) for one-level nested replies
   @ManyToOne(() => Comment, (comment) => comment.replies, { nullable: true })
-  @JoinColumn({ name: 'parent_id' })
+  @JoinColumn({ name: "parent_id" })
   parent?: Comment;
 
   @OneToMany(() => Comment, (comment) => comment.parent)
@@ -46,6 +50,16 @@ export class Comment {
   @RelationId((comment: Comment) => comment.parent)
   parentId?: number;
 
+  // Soft-delete: keeps the row so replies stay attached.
+  // Content is replaced with "[deleted]" on delete.
   @Column({ default: false })
   isDeleted: boolean;
+
+  // Tracks whether the comment has been edited (for 5-minute edit window UI).
+  @Column({ type: "timestamp", nullable: true })
+  editedAt?: Date;
+
+  // Extracted @mention usernames stored for notification lookup.
+  @Column("simple-array", { nullable: true })
+  mentionedUsernames?: string[];
 }
