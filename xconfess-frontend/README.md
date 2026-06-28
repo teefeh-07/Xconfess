@@ -15,6 +15,7 @@ Next.js 16 App Router frontend for xConfess.
 - confession feed and composer
 - reactions, comments, and search
 - messages, notifications, and profile settings
+- end-to-end encrypted private messaging (see `docs/message-e2e-encryption.md`)
 - admin moderation, reports, analytics, and user management
 - Stellar anchoring and tipping surfaces
 

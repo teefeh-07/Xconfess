@@ -229,3 +229,4 @@ xConfess participates in the GrantFox Official Campaign. All related pull reques
 - `xconfess-backend/README.md`
 - `xconfess-frontend/README.md`
 - `xconfess-contracts/README.md`
+- `docs/message-e2e-encryption.md` — E2E private messaging protocol
