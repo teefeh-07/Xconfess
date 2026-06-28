@@ -51,7 +51,7 @@ fn advance(env: &Env, delta: u32) {
 
 #[test]
 fn owner_is_set_after_initialize() {
-    let (env, client, owner) = setup();
+    let (_env, client, owner) = setup();
     assert_eq!(
         client.get_owner(),
         owner,
@@ -232,7 +232,7 @@ fn operator_cannot_pause() {
 
 #[test]
 fn migrate_advances_schema_version_to_2() {
-    let (env, client, owner) = setup();
+    let (_env, client, owner) = setup();
     let version = client.migrate(&owner);
     assert_eq!(version, 2, "migrate() must return the new schema version");
     assert_eq!(client.schema_version(), 2);
@@ -240,7 +240,7 @@ fn migrate_advances_schema_version_to_2() {
 
 #[test]
 fn migrate_is_idempotent() {
-    let (env, client, owner) = setup();
+    let (_env, client, owner) = setup();
     client.migrate(&owner);
     let version = client.migrate(&owner);
     assert_eq!(
