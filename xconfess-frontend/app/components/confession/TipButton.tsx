@@ -201,7 +201,7 @@ export const TipButton = ({ confessionId, recipientAddress, initialStats }: TipB
               </p>
               <span className="sr-only">Tip sent successfully</span>
               {info.explorerUrl && (
-                
+                <a
                   href={info.explorerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -233,7 +233,7 @@ export const TipButton = ({ confessionId, recipientAddress, initialStats }: TipB
                   Retry Verification
                 </button>
                 {info.explorerUrl && (
-                  
+                  <a
                     href={info.explorerUrl}
                     target="_blank"
                     rel="noopener noreferrer"

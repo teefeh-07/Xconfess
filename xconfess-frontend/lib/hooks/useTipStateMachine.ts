@@ -1,4 +1,5 @@
-cat > xconfess-frontend/lib/hooks/useTipStateMachine.ts << 'EOF'
+"use client";
+
 /**
  * useTipStateMachine
  *
@@ -17,8 +18,6 @@ cat > xconfess-frontend/lib/hooks/useTipStateMachine.ts << 'EOF'
  * Duplicate protection
  *   `inFlightRef` blocks concurrent calls to `submit` or `retry`.
  */
-
-"use client";
 
 import { useCallback, useRef, useState } from "react";
 import { sendTip, verifyTip } from "@/lib/services/tipping.service";
@@ -214,4 +213,3 @@ export function useTipStateMachine({
 
   return { info, submit, retryVerify, reset };
 }
-EOF

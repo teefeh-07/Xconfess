@@ -29,7 +29,7 @@ export class FeatureFlagsService {
 
   async update(name: string, dto: UpdateFeatureFlagDto): Promise<FeatureFlag> {
     await this.featureFlagRepository.update({ name }, dto);
-    return this.findOne(name);
+    return (await this.findOne(name))!;
   }
 
   async delete(name: string): Promise<void> {

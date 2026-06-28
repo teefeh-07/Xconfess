@@ -1,4 +1,4 @@
-﻿import express, { Request, Response } from 'express';
+﻿import express, { Request, Response, NextFunction } from 'express';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import csurf from 'csurf';
@@ -12,7 +12,7 @@ function buildTestApp() {
   app.get('/api/csrf-token', (_req: Request, res: Response) => { res.json({ ok: true }); });
   app.post('/api/confessions', (_req: Request, res: Response) => { res.status(201).json({ created: true }); });
   app.post('/api/webhooks/moderation/results', (_req: Request, res: Response) => { res.status(200).json({ ok: true }); });
-  app.use((err: any, _req: Request, res: Response, _next: Function) => { if (err.code === 'EBADCSRFTOKEN') { return res.status(403).json({ message: 'Invalid or missing CSRF token' }); } _next(err); });
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => { if (err.code === 'EBADCSRFTOKEN') { return res.status(403).json({ message: 'Invalid or missing CSRF token' }); } _next(err); });
   return app;
 }
 

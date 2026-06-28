@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Toggle, Plus, Trash2, Save } from "lucide-react";
+import { ToggleLeft, Plus, Trash2, Save } from "lucide-react";
 
 interface FeatureFlag {
   id: string;
@@ -277,7 +277,7 @@ export default function FeatureFlagsPage() {
 
         {flags.length === 0 && (
           <div className="text-center py-12 text-gray-500">
-            <Toggle className="w-12 h-12 mx-auto mb-4" />
+            <ToggleLeft className="w-12 h-12 mx-auto mb-4" />
             <p>No feature flags yet. Create your first flag to get started.</p>
           </div>
         )}

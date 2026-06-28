@@ -406,7 +406,7 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Account unlocked.' })
   async unlockAccount(@Body('email') email: string) {
     await this.adminService.unlockAccount(email);
-    return { message: Account unlocked for \ };
+    return { message: `Account unlocked for ${email}` };
   }
   @Patch('users/:id/ban')
   @HttpCode(HttpStatus.OK)

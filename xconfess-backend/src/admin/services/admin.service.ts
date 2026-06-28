@@ -20,6 +20,7 @@ import { ConfigService } from '@nestjs/config';
 import { Tip } from '../../tipping/entities/tip.entity';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { JobManagementService } from '../../notifications/services/job-management.service';
+import { LockoutService } from '../../auth/lockout.service';
 
 export interface BulkResolveOutcome {
   id: string;
@@ -69,7 +70,7 @@ export class AdminService {
     private readonly eventEmitter: EventEmitter2,
     private readonly auditLogService: AuditLogService,
     private readonly jobManagementService: JobManagementService,
-    private readonly auditLogService: AuditLogService,
+    private readonly lockoutService: LockoutService,
   ) {}
 
   private get aesKey(): string {
@@ -440,7 +441,7 @@ export class AdminService {
   
   async unlockAccount(email: string): Promise<void> {
     await this.lockoutService.clearLockout(email);
-    this.logger.log(Admin unlocked account: \);
+    this.logger.log(`Admin unlocked account: ${email}`);
   }
   async banUser(
     userId: number,

@@ -71,7 +71,7 @@ export class ConfessionSchedulerService {
     }
 
     confession.status = 'draft';
-    confession.publishAt = null;
+    confession.publishAt = null as any;
 
     return this.confessionRepository.save(confession);
   }

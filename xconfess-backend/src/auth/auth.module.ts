@@ -16,7 +16,8 @@ import { PasswordReset } from './entities/password-reset.entity';
 
 @Module({
   imports: [
-    forwardRef(() => UserModule),`n    CacheModule,
+    forwardRef(() => UserModule),
+    CacheModule,
     EmailModule,
     PassportModule,
     TypeOrmModule.forFeature([PasswordReset]),
@@ -30,7 +31,8 @@ import { PasswordReset } from './entities/password-reset.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [`n    LockoutService,
+  providers: [
+    LockoutService,
     AuthService,
     JwtStrategy,
     PasswordResetService,

@@ -13,7 +13,7 @@ import { RequestHandler } from 'express';
  */
 
 // Step 1: Parse cookies so csurf can read the secret cookie
-export const cookieParserMiddleware: RequestHandler = cookieParser();
+export const cookieParserMiddleware: RequestHandler = cookieParser() as unknown as RequestHandler;
 
 // Step 2: Configure csurf to use a cookie (not session) for the secret
 export const csrfMiddleware: RequestHandler = csurf({
